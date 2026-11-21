@@ -1,0 +1,25 @@
+LizardKing
+Licensed under the GNU Affero General Public License v3.0 (see LICENSE).
+
+This project carries over code from OpenPuck
+(https://github.com/safijari/openpuck), also AGPL-3.0, by the OpenPuck
+authors and contributors. The reverse-engineered Steam Controller 2 RF
+protocol, the radio driver, bonding, and the USB plumbing are their work.
+
+Carried over from OpenPuck, with LizardKing's modifications (other emulation
+modes, the WebUSB configurator, firmware update over WebUSB, Xbox 360 console
+authentication and dynamic USB mounting removed):
+
+  LizardKing/bonds.*, board_config.h, build_info.h, config.*,
+  controllers.*, fault_diag.*, gamepad_util.*, haptics.*, identity.*,
+  lizard_map.*, mode_lizard.*, mode_xinput.*, puck_hid.*, pwr_switch.*,
+  radio.*, rf_diag.*, rf_journal_layout.h, rf_link.*, serial_console.*,
+  status_led.*, steam_commands.h, triton.*, usb_app_drivers.*, usb_tx.*,
+  wake_hid.*, xinput_descriptors.h, LizardKing.ino (from OpenPuck.ino),
+  gen_version.sh, .clang-format, docs/PROTOCOL.md
+
+Written for LizardKing:
+
+  LizardKing/mode_eliz.*, LizardKing/eliz_drive.*, guide/, tools/layout/,
+  tools/check-trailing-comments.py, docs/DESIGN.md,
+  docs/KEYBOARD_LAYOUT.md
