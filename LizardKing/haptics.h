@@ -12,25 +12,19 @@
 // mid-buzz) the actuator whines forever -- so we send 0x82-zero stop bursts on reconnect, but ONLY when a
 // haptic was actually active when the link dropped: every extra 0x82 frame is an audible click on the
 // controller (captured), so an unconditional burst on each link-up edge is itself a buzz source on a flapping
-// link. The g_hapLog ring captures recent OUTPUT reports for the 'H' dump.
+// link.
 #pragma once
 #include <stdint.h>
-#include "config.h" // OPK_LOG
+#include "config.h"
 #include "bonds.h" // NSLOT
 
-// Post-(re)connect haptic block default. While armed, ALL Steam haptic relays to that slot are dropped: a
-// just-powered-on controller's haptic engine isn't ready, and feeding it haptics in that window leaves it in a
-// degraded/latched state (slow/stuck/missing haptics until a re-init). Runtime-adjustable (g_hapticBlockMs) and
-// toggleable (g_hapticBlockOn) from the WebUSB panel; this is the boot default.
-#define HAPTIC_BLOCK_MS_DEFAULT 10000u
 // max relayed payload bytes per entry: RF frame = [E3][len][05][rid][payload] and MAXLEN=64 -> 60
 #define RELAY_MAXP 60u
 // Controller power-off: hapticSendShutdown() relays Steam's confirmed "turn off controller" command (feature-0x01
 // cmd 0x9F, payload "off!" -- captured from the real puck). Sent as a small burst because the RF relay is NO-ACK.
 #define HAPTIC_SHUTDOWN_SHOTS 3u
-// Rumble strength: percent of the decoded host amplitude applied in every translated (non-puck) mode. 200
-// (double) is the default the panel's removed rumble-strength slider shipped with, so an untouched puck feels
-// exactly as before. Runtime-adjustable and persisted -- console "RS<pct>".
+// Rumble strength: percent of the decoded host amplitude applied in LizardKing. 200 (double) is the default.
+// Runtime-adjustable and persisted -- console "RS<pct>".
 #define RUMBLE_SCALE_PCT 200u
 #define RUMBLE_SCALE_MIN 10u
 #define RUMBLE_SCALE_MAX 500u
@@ -50,18 +44,12 @@
 #define RUMBLE_STYLE_MAX 6
 extern uint16_t g_rumbleScale; // percent, RUMBLE_SCALE_MIN..RUMBLE_SCALE_MAX
 extern uint8_t g_rumbleStyle; // RUMBLE_STYLE_*
-// Test buzz for the panel/console: a fixed mid-scale amplitude pushed through the SAME shaping path host
+// Test buzz for the console (TR): a fixed mid-scale amplitude pushed through the SAME shaping path host
 // rumble takes, so what you feel is what a game at that amplitude would feel like. Auto-stops in hapticTask()
 // -- the controller's haptic LATCHES, so the stop is not optional.
 #define RUMBLE_TEST_AMP 0x8000u
 #define RUMBLE_TEST_MS 500u
 void hapticTestRumble();
-
-// Journal-builder progress tick. It is deliberately short and is emitted only
-// between measured channels, never inside a quality window. Hardware testing
-// showed that this 0x82 haptic does not reset the controller inactivity timer.
-#define RF_JOURNAL_BUILDER_TICK_MS 150u
-void hapticRfJournalBuilderTick(uint8_t participantMask);
 
 // ---- relay queue (written by puck_hid.cpp, mode_*.cpp, serial_console.cpp; drained by rf_link.cpp) ----
 // Enqueue one host->controller report. `slot` = bond slot (0..NSLOT-1) or 0xFF to broadcast to every
@@ -72,23 +60,20 @@ void hapticRfJournalBuilderTick(uint8_t participantMask);
 // that nothing will ever wait on a reply for. rfConnFlushRelay uses this.
 bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 		  bool isHaptic, uint8_t slot = 0xFF, bool expectReply = false);
-// Drop everything queued for one bond slot. Called when a slot becomes BONDED (Steam's 0xA2 pairing write,
-// the panel's bond import): whatever was queued while the slot was empty was aimed at a controller that no
+// Drop everything queued for one bond slot. Called when a slot becomes BONDED (Steam's 0xA2 pairing
+// write): whatever was queued while the slot was empty was aimed at a controller that no
 // longer -- or never did -- live there, and an unbonded slot's ring is never flushed, so it would otherwise
 // be handed straight to the freshly paired controller (a stale "off!" powered it back off). ISR-safe.
 void relayClearSlot(uint8_t slot);
 
-// id9 steering (EMULATED modes only): land the controller's SET_SETTINGS index 9 (digital-mappings /
+// id9 steering (LizardKing and pure lizard): land the controller's SET_SETTINGS index 9 (digital-mappings /
 // lizard-active) at 0 once per LIZKEEP_MS per connected slot to hold its autonomous mapping/haptic engine
-// OFF, or at 1 once per connect episode to turn it on -- per the active type's g_padHaptics config. id9
+// OFF (LizardKing), or at 1 once per connect episode to turn it on (pure lizard). id9
 // gates the whole autonomous pad layer, including the trackpad ticks, and holding it off also stops the
 // engine latching the deep-inside buzz seen after repeated reconnects (capture-for-haptics.txt: that buzz is
 // controller-internal; OpenPuck relays no haptics in that state). PUCK modes (STEAM/LIZARD) are not steered:
 // Steam writes id9 itself there, and driving it from the puck side fought those writes.
 #define LIZKEEP_MS 2000u
-extern uint8_t
-	// 1 = hold on (default, persisted); console 'u' toggles for A/B
-	g_lizKeep;
 // Autonomous controller power-off on host sleep (see hapticTask). 1 = power the controllers off once the
 // USB suspend has persisted SUSPEND_OFF_MS (default -- what the real puck does, so the controllers don't sit
 // awake draining while the host sleeps). 0 = leave them on.
@@ -100,59 +85,11 @@ extern uint8_t
 // physical gesture; the power-off fires once per suspend so the returning controller is not shut off again.
 // Turn this OFF (console "SO") if a controller must stay awake through host sleep. Persisted.
 extern uint8_t g_suspendOff;
-// Master enable for the puck->controller haptic relay (Steam 0x80-0x86 rumble/pad-feedback). Console "HR"
-// toggles it to isolate the drag-smoothness cost of relaying Steam's trackpad haptics. See haptics.cpp.
-extern bool g_hapticRelay;
-
-// Post-connect haptic block (persisted, panel-controlled): when g_hapticBlockOn, Steam haptics are dropped for
-// g_hapticBlockMs after a (re)connect so the controller's haptic engine settles before the first real haptic.
-extern uint8_t
-	// 1 = block enabled, 0 = relay haptics immediately on connect (default)
-	g_hapticBlockOn;
-extern uint16_t
-	// block duration in ms (default HAPTIC_BLOCK_MS_DEFAULT)
-	g_hapticBlockMs;
-
-// anything still queued (xinput uses it to pace rumble re-queues)
-bool relayPending();
 extern uint8_t g_relayOp; // relay frame opcode (E3 poll)
-extern uint8_t g_relaySub; // relay sub-TLV type byte = SET
-extern volatile uint8_t g_testHaptic; // 't<n>' injects n test haptics
-// pending haptic-STOP frames to relay (kill a latched whine)
-extern volatile uint8_t g_hapticStop;
-// Per-slot block: arm after a (re)connect, drop haptics aimed at the slot for g_hapticBlockMs (when g_hapticBlockOn).
-extern unsigned long g_hapticBlockUntil[NSLOT];
 
 // relay the controller power-off (0x9F "off!"), burst x3. Steam's per-interface 0x9F passes that slot so
-// only that controller powers off; host-suspend / the panel test button keep the broadcast default (all off).
+// only that controller powers off; host suspend keeps the broadcast default (all off).
 void hapticSendShutdown(uint8_t slot = 0xFF);
-
-// ---- diagnostic capture (compiled in only when OPK_LOG): a ring of recent host->controller commands +
-//      link/TX markers, dumped over WebUSB. No-ops in a production build so call sites vanish. ----
-#if OPK_LOG
-void hapLogAdd(uint8_t slot, uint8_t rid, const uint8_t *b, uint16_t n);
-void hapticDumpLog(); // 'H' console dump of the recent OUTPUT-report history
-// WebUSB capture drain: resetDrain(true) rewinds to the OLDEST entry (dump the whole ring from boot);
-// resetDrain(false) starts at "now" (live only). pull yields each entry once, oldest->newest, skipping empties.
-void hapLogResetDrain(bool fromBoot);
-bool hapLogPull(uint32_t *logMs, uint8_t *slot, uint8_t *rid, uint8_t *n,
-		uint8_t bytes16[16]);
-#else
-static inline void hapLogAdd(uint8_t, uint8_t, const uint8_t *, uint16_t)
-{
-}
-static inline void hapticDumpLog()
-{
-}
-static inline void hapLogResetDrain(bool)
-{
-}
-static inline bool hapLogPull(uint32_t *, uint8_t *, uint8_t *, uint8_t *,
-			      uint8_t *)
-{
-	return false;
-}
-#endif
 
 bool hapticLinkUp(int slot = -1);
 bool haptic82Blocked(int slot = -1);
@@ -166,31 +103,21 @@ bool hapticSteamRumble(uint16_t lowFreq, uint16_t highFreq, uint8_t slot = 0);
 // rfConnFlushRelay's s1 must carry a PID distinct from the GET poll that follows it. g_relayPid
 // is initialised 2 ahead of g_pollPid and both increment once per cycle, so the 2-bit PIDs stay
 // 2 apart (mod 4) forever and never collide — keeping the controller from deduplicating the GET.
-// Stability test: when g_stabTest (WebUSB cmd 0x0F), buzz all controllers every 10s to keep them awake for an
-// unattended uptime-until-hang measurement. hapticStabTask() is called from loop().
-extern bool g_stabTest;
-void hapticStabTask();
 
-void rfConnQueueHapticRelay();
 // returns true if a relay frame was actually transmitted this call (queue had an entry), so the poll loop can
 // count relay TXs separately from poll cycles.
 bool rfConnFlushRelay(uint8_t ch, uint8_t s1);
 // times a relay-ring drain hit its iteration cap (head/tail desync or corruption) -- non-zero means we caught
-// and recovered from what would otherwise be an IRQ-off watchdog hang. Surfaced on the WebUSB panel.
+// and recovered from what would otherwise be an IRQ-off watchdog hang. Recorded by the flight recorder.
 extern volatile uint16_t g_ringFault;
 
-// boot reset: clear relay/active flags, arm the reconnect block
+// boot reset: clear relay/active flags
 void hapticInit();
 
 // per-loop upkeep: link-edge markers + steam 0x82 quiet timeout + fires the scheduled re-init
 void hapticTask();
 
-// replay Steam's haptic-subsystem re-init to the controller -> clears a latched/stuck buzz.
-// `slot` defaults to 0xFF (broadcast to all connected) -- the re-init is a settings-only reset and is
-// harmless on healthy controllers, so it's worth re-initializing every slot the firmware knows about.
-void hapticReinit(uint8_t slot = 0xFF);
-// Called from rf_link the instant a controller (re)connect is detected (an F-reply after a gap): blocks haptic
-// relays for g_hapticBlockMs and schedules a re-init just after, to keep the freshly-booted
-// controller out of the degraded/latched haptic state. Reliable -- independent of hapticTask's link heuristic.
-// Per-slot: only the slot that just reconnected is blocked, the others keep relaying.
+// Called from rf_link the instant a controller (re)connect is detected (an F-reply after a gap): resets that
+// slot's rumble state and scrubs haptics queued before the link came up. Independent of hapticTask's link
+// heuristic; the other slots keep relaying.
 void hapticOnReconnect(int slot);

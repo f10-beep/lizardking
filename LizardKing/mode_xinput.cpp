@@ -2,7 +2,6 @@
 #include "mode_xinput.h"
 #include "xinput_descriptors.h"
 #include "triton.h"
-#include "gamepad_util.h"
 #include "config.h"
 #include "haptics.h"
 #include "bonds.h"
@@ -380,7 +379,7 @@ void XboxController::task()
 	int slot = g_xi.bond;
 	bool pending = g_xi.rumblePending && g_xi.rumbleBond == slot;
 	uint16_t low = g_xi.rumbleLow, high = g_xi.rumbleHigh;
-	if (!g_rumble || now - g_xi.rumbleMs > RUMBLE_STUCK_MS) {
+	if (now - g_xi.rumbleMs > RUMBLE_STUCK_MS) {
 		pending |= low || high;
 		low = high = 0;
 		g_xi.rumbleLow = g_xi.rumbleHigh = 0;

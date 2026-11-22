@@ -4,9 +4,6 @@
 // g_lizardMap replaces the hardcoded button→key map in mode_lizard.cpp with a runtime-configurable
 // list of LizardBinding entries. Each binding maps a trigger condition (button bitmask + optional
 // hold-modifier bitmask) to a single output action. rfLizard() walks the table every input frame.
-//
-// Designed for forward compatibility: the output union can gain a GAMEPAD variant to remap emulated-
-// controller buttons without changing the trigger model, storage format, or WebUSB protocol.
 #pragma once
 #include <stdint.h>
 

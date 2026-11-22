@@ -29,7 +29,7 @@ bool g_lkTrace;
 #define LK_KEY_CLICK_ON 2400
 #define LK_KEY_CLICK_OFF 1700
 
-// pad counts per cursor pixel at the default sensitivity (g_mDiv 64)
+// pad counts per cursor pixel
 #define LK_PX_DIV 160
 
 // While touching, the cursor chases the thumb's absolute (1:1) position,
@@ -1409,9 +1409,8 @@ static void mouseStep(const PuckInput &in, bool deskOk, int rdx, int rdy,
 {
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
 	bool drag = deskOk && rTouch && lTouch;
-	float k = 64.0f / (float)g_mDiv;
 	int dx0 = rdx + (drag ? ldx : 0), dy0 = rdy + (drag ? ldy : 0);
-	float tx = dx0 * k / LK_PX_DIV, ty = -dy0 * k / LK_PX_DIV;
+	float tx = (float)dx0 / LK_PX_DIV, ty = (float)-dy0 / LK_PX_DIV;
 	float fx, fy;
 	ballStep(deskOk && rTouch, rTouch, tx, ty, in.rpz, s_pad[PAD_R].click,
 		 &fx, &fy);

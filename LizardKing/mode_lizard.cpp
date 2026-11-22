@@ -103,6 +103,9 @@ static uint64_t lizardButtons(const PuckInput &in)
 // a key/mouse-button that was DOWN the instant Steam takes over is never released (the change-dedup below
 // thinks it is still "down") and sticks on the desktop until a reconnect/power-cycle.
 // Stick deflection -> -1..1 with a deadzone and a squared response.
+// desktop cursor sensitivity divisor and glide friction (percent kept per step)
+#define LIZARD_DIV 64
+#define LIZARD_FRICTION 94
 #define STICK_MOUSE_DEADZONE 3500
 #define STICK_MOUSE_PX_PER_S 1100.0f
 static float stickAxis(int v)
@@ -162,7 +165,7 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 	int dx = 0, dy = 0;
 	{
 		float sumx = 0, sumy = 0;
-		float f = g_mFric / 100.0f;
+		float f = LIZARD_FRICTION / 100.0f;
 		for (int p = 0; p < PM_N; p++) {
 			const uint8_t src = (p == PM_RIGHT) ?
 						    LZ_MSRC_RPAD :
@@ -201,9 +204,9 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 					pm.vy = 0;
 			}
 		}
-		// Y inverted; *10 = desktop cursor sensitivity (g_mDiv 64 -> eff 640)
-		float mxf = sumx / (float)(g_mDiv * 10);
-		float myf = -(sumy / (float)(g_mDiv * 10));
+		// Y inverted; *10 = desktop cursor sensitivity (LIZARD_DIV 64 -> eff 640)
+		float mxf = sumx / (float)(LIZARD_DIV * 10);
+		float myf = -(sumy / (float)(LIZARD_DIV * 10));
 
 		// Sticks are rate controls, not position deltas: scale by elapsed time so the speed is the same
 		// whatever the report rate, and square the deflection for fine control near the deadzone.
@@ -232,7 +235,7 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 					ay += stickAxis(in.ry);
 				}
 				float speed = STICK_MOUSE_PX_PER_S * 64.0f /
-					      (float)g_mDiv;
+					      (float)LIZARD_DIV;
 				mxf += ax * speed * dt;
 				myf -= ay * speed * dt;
 			}
@@ -270,7 +273,8 @@ void rfLizard(Adafruit_USBD_HID *mdev, Adafruit_USBD_HID *kdev, uint8_t mrid,
 			bool ltouch = (in.buttons & TB_LPADT) != 0;
 			int ly = in.lpy;
 			if (ltouch && plt[s])
-				sacc += (ly - ply[s]) / (float)(g_mDiv * 24);
+				sacc += (ly - ply[s]) /
+					(float)(LIZARD_DIV * 24);
 			if (ltouch) {
 				ply[s] = ly;
 				anyTouch = true;

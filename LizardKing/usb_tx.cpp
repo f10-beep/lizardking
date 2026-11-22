@@ -106,7 +106,7 @@ void usbTxDrain(void)
 	__atomic_clear(&draining, __ATOMIC_RELEASE);
 }
 
-// Per-slot drain callbacks for non-HID senders (XInput endpoint, WebUSB blob). Registered at setup(), invoked
+// Per-slot drain callbacks for non-HID senders (the XInput endpoint). Registered at setup(), invoked
 // from usbTxPump() (loop context). Fixed, tiny capacity; registration is setup-only (single-threaded).
 #define TX_DRAIN_MAX 4
 static usbTxDrainFn g_drainFns[TX_DRAIN_MAX];
@@ -153,7 +153,7 @@ void usbTxUnboost(void)
 // Call once per loop() iteration.
 void usbTxPump(void)
 {
-	// Whole pump (HID sends + vendor/WebUSB drains) runs boosted -- every dcd claim window in here is
+	// Whole pump (HID sends + vendor drains) runs boosted -- every dcd claim window in here is
 	// then atomic against the usbd task (see usbTxBoost above).
 	usbTxBoost();
 	usbTxDrain();

@@ -8,7 +8,7 @@
 // g_pollsps/g_relayps/g_crcps/g_norxps/g_rfStallRecover -- flight-recorder
 // vitals
 #include "rf_link.h"
-#include "haptics.h" // g_ringFault, relayPending() -- relay-load vitals
+#include "haptics.h" // g_ringFault
 
 // GPREGRET2 markers. GPREGRET (id 0) is reserved by the Adafruit bootloader for the DFU magic; GPREGRET2 is
 // free for the application and is retained across soft/watchdog/pin reset, cleared only on power-on/brownout.
@@ -24,7 +24,7 @@ static uint8_t g_hangStage = 0xFF;
 // The nRF52 WDT raises a TIMEOUT interrupt ~2 LFCLK cycles BEFORE it resets the chip. We take that interrupt at
 // the highest NVIC priority (0) -- above FreeRTOS/TinyUSB BASEPRI critical sections -- read the stacked PC of
 // whatever code was wedged, and stash it in a .noinit RAM struct that survives the reset. Next boot reports it
-// on the panel; map it with addr2line to name the stuck function. Caveat: this fires only if interrupts aren't
+// over CDC; map it with addr2line to name the stuck function. Caveat: this fires only if interrupts aren't
 // hard-masked (PRIMASK/CPSID). If a watchdog reset reports NO pc, the hang was a PRIMASK-off / flash-stall type
 // (a different, narrower class) -- itself a useful signal. .noinit isn't zeroed by the C runtime, so it rides
 // through the watchdog reset (unlike GPREGRET2, which this board's bootloader wipes).
@@ -67,18 +67,13 @@ void faultDiagArmHangCapture()
 	NVIC_ClearPendingIRQ(WDT_IRQn);
 	NVIC_EnableIRQ(WDT_IRQn);
 }
-uint32_t faultDiagHangPC()
-{
-	return g_reportHangPC;
-}
 
 // Hang breadcrumb: loop() stage written to GPREGRET2 as 0x80|stage. 0x80..0x9F can never collide with the
 // intentional-reboot (0xB1) / HardFault (0xFA) markers or the power-on default (0), so the same register
 // disambiguates all of them at boot.
 #define G2_STAGE_FLAG 0x80u
-static const char *const STAGE_STR[] = { "webusb", "ctrl.task", "serial",
-					 "rfdiag", "rflink",	"haptic",
-					 "led",	   "usbmount",	"usbtx" };
+static const char *const STAGE_STR[] = { "ctrl.task", "serial", "rflink",
+					 "haptic",    "led",	"usbtx" };
 #define STAGE_COUNT ((uint8_t)(sizeof STAGE_STR / sizeof STAGE_STR[0]))
 
 static const char *const REASON_STR[RR_COUNT] = {
@@ -106,9 +101,8 @@ void faultDiagArmIntentionalReset()
 
 // Live stage + loop heartbeat. The post-reset GPREGRET2 breadcrumb only works if the bootloader preserves
 // GPREGRET2 across a watchdog reset -- some clone boards clear it, so it reads blank. These LIVE values don't
-// depend on surviving a reset: the WebUSB blob send runs on the USB SOF interrupt (independent of loop()), so
-// when loop() wedges, the SOF drain can still report the current stage + how long loop() has been stuck,
-// straight to the panel during the ~8s before the watchdog fires.
+// depend on surviving a reset: the flight recorder snapshots them, so the dump after a hang shows the stage
+// loop() was in and how long it had been stuck.
 static volatile uint8_t g_curStage = 0xFF;
 static volatile uint32_t g_loopBeatMs = 0;
 
@@ -121,10 +115,6 @@ void faultDiagSetStage(uint8_t stage)
 void faultDiagBeat()
 {
 	g_loopBeatMs = millis();
-}
-uint8_t faultDiagCurStage()
-{
-	return g_curStage;
 }
 uint32_t faultDiagStallMs()
 {
@@ -175,7 +165,6 @@ __attribute__((section(".noinit"))) static volatile struct FlightRec g_flight;
 static struct FlightRec
 	g_flightSaved; // boot-time copy of the pre-reset trail (BSS)
 static bool g_haveSaved = false;
-bool g_vitals = true; // live per-second CDC vitals line (console "VIT" toggles)
 
 static const char *const FR_STR[] = { "none",  "beat",	  "SET",    "GET",
 				      "relay", "rf-up",	  "rf-DN",  "HEAL!",
@@ -194,7 +183,7 @@ static const char *frEvtStr(uint8_t e)
 // watches the loop heartbeat; when loop() has been frozen ~6 s (the WDT resets at 8 s), it walks the loop and
 // usbd tasks' TCBs for their stacked PCs (both tasks BLOCKED = the suspected mutual-deadlock class) plus the
 // PC it interrupted (covers the one-task-spinning class), and writes one record to a reserved raw flash page.
-// Next boot reports it on CDC and feeds the existing hangPC/hangStage panel channels. Caveats: fires only if
+// Next boot reports it on CDC. Caveats: fires only if
 // priority-1 interrupts still run (PRIMASK-off hangs leave no record -- same caveat as the WDT capture, and
 // itself a signal); a task that is RUNNING (not blocked) has a stale TCB pxTopOfStack, so cross-check its PC
 // against irqPC.
@@ -263,7 +252,7 @@ extern "C" void bbTimerBody(void)
 		// USBD silicon under concurrent RADIO EasyDMA): TinyUSB's dma_running never clears, every next
 		// transfer re-defers on the TASK_PRIO_HIGH usbd task (livelock), and TASK_PRIO_LOW loop starves.
 		// If the END EVENT is latched but its IRQ was lost, re-pending the USBD IRQ makes the ISR run
-		// edpt_dma_end -> the defer chain unwinds -> FULL recovery, no reset (the panel trail shows a
+		// edpt_dma_end -> the defer chain unwinds -> FULL recovery, no reset (the flight recorder shows a
 		// recovered stall episode). Harmless when nothing is pending: a spurious USBD ISR just returns.
 		// >=500ms of frozen loop heartbeat is never legitimate (bond flash saves are ms-class).
 		if (stuck >= 2) {
@@ -384,8 +373,8 @@ static void bbErase()
 // boards where those survive the black box only fills the gaps; on RAM-wiping boards it IS the evidence.
 // Lifecycle: the record is NOT erased here -- a normal boot often has no CDC attached, so erasing on first
 // boot would destroy the register words unread. Instead it persists (the banner re-prints on ANY later boot,
-// e.g. a debug-CDC reboot) and the NEXT dump erases the page itself. A "seen" marker at word 12 keeps the
-// panel adoption one-shot so a stale record can't masquerade as a later, unrelated hang's evidence.
+// e.g. a later reboot) and the NEXT dump erases the page itself. A "seen" marker at word 12 keeps the
+// adoption below one-shot so a stale record can't masquerade as a later, unrelated hang's evidence.
 static void bbBootReport(bool isHang)
 {
 	const volatile uint32_t *w = (const volatile uint32_t *)BB_ADDR;
@@ -431,7 +420,7 @@ static void bbBootReport(bool isHang)
 				(unsigned long)w[10],
 				(unsigned long)(w[11] >> 16),
 				(unsigned long)(w[11] & 0xFFFF));
-		// feed the existing panel channels (hangLog / Last-reset tile) when the .noinit path came back
+		// adopt it as the hang record (hangLog / last reset) when the .noinit path came back
 		// blank -- i.e. exactly the RAM-wiping boards this exists for. loopPC is the primary suspect
 		// location; irqPC (the code actually RUNNING while loop starved) rides the LR slot. One-shot:
 		// only a FRESH record (seen-marker still erased) may claim this boot's hang.
@@ -589,36 +578,6 @@ void faultDiagFlightTick(void)
 		g_flight.loopPerSec = loops;
 		loops = 0;
 		secMs = now;
-		// Guard on FIFO space: a CDC write to a host that has the port open but isn't draining blocks the loop --
-		// itself a watchdog-hang source (same failure the WebUSB blob send hit). If there's no room this second,
-		// skip the line rather than stall; the persistent trail still captured the vitals via the beat above.
-		if (g_vitals && Serial && Serial.availableForWrite() >= 200) {
-			// Clock fingerprint on every line: the radio waits time out on micros() (HFCLK-derived). If a clone's
-			// HFCLK drops to the internal RC (or micros() freezes), usPerMs drifts off 1000 and a "bounded" RX/
-			// disable wait can spin forever -- the prime suspect for a healthy-then-sudden hard lock. lf/hf: R=RC,
-			// X=xtal, S=synth, -=stopped.
-			const char clkc[] = { '-', 'R', 'X', 'S' };
-			uint8_t lf = clockLfSrc(), hf = clockHfSrc();
-			Serial.printf(
-				"# vit up=%lus loop=%lu/s stall=%ums stage=%s usbdStk=%u loopStk=%u heapUsed=%lu "
-				"poll=%u relay=%u crc=%u norx=%u heal=%u ringF=%u clk=%c/%c usPerMs=%u\n",
-				(unsigned long)(now / 1000),
-				(unsigned long)g_flight.loopPerSec,
-				(unsigned)g_flight.stallMs,
-				faultDiagStageStr(g_flight.curStage),
-				(unsigned)g_flight.usbdStackFree,
-				(unsigned)g_flight.loopStackFree,
-				(unsigned long)g_flight.heapUsed,
-				(unsigned)g_flight.pollsps,
-				(unsigned)g_flight.relayps,
-				(unsigned)g_flight.crcps,
-				(unsigned)g_flight.norxps,
-				(unsigned)g_flight.rfHeal,
-				(unsigned)g_flight.ringFault,
-				lf < 4 ? clkc[lf] : '?',
-				hf < 4 ? clkc[hf] : '?',
-				(unsigned)clockUsPerMs());
-		}
 	}
 }
 
@@ -633,7 +592,7 @@ static void frWaitTx(uint16_t need)
 
 void faultDiagDumpFlight(void)
 {
-	// no host attached (e.g. the automatic boot dump before the panel
+	// no host attached (e.g. the automatic boot dump before a terminal
 	// connects) -- use "FR" later
 	if (!Serial)
 		return;
@@ -675,76 +634,6 @@ void faultDiagDumpFlight(void)
 			      faultDiagStageStr(r->stage), r->arg);
 	}
 	Serial.println("# ---- end flight recorder ----");
-}
-
-// ---- WebUSB panel access to the saved trail ----------------------------------------------------------------
-static uint16_t g_frDrain =
-	0; // pull cursor into g_flightSaved, 0 = oldest saved event
-
-bool faultDiagHaveFlight(void)
-{
-	return g_haveSaved && g_flightSaved.magic == FR_MAGIC;
-}
-
-// ---- clock fingerprint -------------------------------------------------------------------------------------
-static uint8_t g_clkLf = 0, g_clkHf = 0;
-static uint16_t g_clkUsPerMs = 0;
-
-void clockDiagBoot()
-{
-	// LFCLKSTAT: bit16 STATE(running), bits1:0 SRC (0=RC,1=Xtal,2=Synth). HFCLKSTAT: bit16 STATE, bit0 SRC
-	// (0=RC,1=Xtal). The bare-metal radio needs HFXO; if HF shows RC here, RF runs on the 64 MHz internal RC.
-	uint32_t lf = NRF_CLOCK->LFCLKSTAT;
-	uint32_t hf = NRF_CLOCK->HFCLKSTAT;
-	bool lfrun = lf & CLOCK_LFCLKSTAT_STATE_Msk;
-	uint8_t lfsrc = (uint8_t)(lf & CLOCK_LFCLKSTAT_SRC_Msk);
-	g_clkLf = lfrun ? (uint8_t)(lfsrc + 1) :
-			  0; // 1=RC,2=Xtal,3=Synth, 0=stopped
-	bool hfxtal = hf & CLOCK_HFCLKSTAT_SRC_Msk;
-	g_clkHf = hfxtal ? 2 : 0; // 2=crystal, 0=RC
-	Serial.printf("# clock: LFCLK=%s HFCLK=%s\n",
-		      g_clkLf == 2 ? "xtal" :
-		      g_clkLf == 1 ? "RC" :
-		      g_clkLf == 3 ? "synth" :
-				     "stopped",
-		      g_clkHf == 2 ? "xtal" : "RC");
-}
-
-void clockDiagTick()
-{
-	// Cross-check the two time bases: count micros() (HFCLK-derived) elapsed over a ~1s millis() (LFCLK/RTC)
-	// window. usPerMs = micros-delta / millis-delta; 1000 = the clocks agree. A clone whose HFCLK runs fast vs
-	// its LFCLK reads >1000 here -- the exact signature behind "poll rate too high, delivered too low".
-	static uint32_t u0 = 0;
-	static unsigned long m0 = 0;
-	static bool init = false;
-	unsigned long m = millis();
-	if (!init) {
-		u0 = micros();
-		m0 = m;
-		init = true;
-		return;
-	}
-	unsigned long dm = m - m0;
-	if (dm >= 1000) {
-		uint32_t du = (uint32_t)(micros() - u0);
-		g_clkUsPerMs = (uint16_t)(du / dm);
-		u0 = micros();
-		m0 = m;
-	}
-}
-
-uint8_t clockLfSrc()
-{
-	return g_clkLf;
-}
-uint8_t clockHfSrc()
-{
-	return g_clkHf;
-}
-uint16_t clockUsPerMs()
-{
-	return g_clkUsPerMs;
 }
 
 // ---- per-task stack headroom (usbd-overflow hypothesis check) ---------------------------------------------

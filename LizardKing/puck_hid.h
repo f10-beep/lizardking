@@ -15,25 +15,8 @@
 #include <stdint.h>
 
 // Forward report 0x45 only when the seq advanced (dedupe like the real puck); sending stale
-// repeats makes Steam's trackpad smoothing stair-step. (WebUSB field 14)
+// repeats makes Steam's trackpad smoothing stair-step.
 extern uint8_t g_fwdNewOnly;
-// Content dedup: forward a 0x45/0x42 report only when its body EXCLUDING the free-running counter byte
-// changed, so the delivered rate tracks the controller's real distinct-report rate (not the poll rate).
-// On by default; console "CD" toggles for A/B. (see puck_hid.cpp for the why)
-extern uint8_t g_fwdContentDedup;
-
-// True while we are presenting the desktop keyboard/mouse instead of forwarding the gamepad to Steam
-// (MODE_LIZARD always, or MODE_STEAM once Steam's heartbeat has stopped). Exposed so the haptic layer can
-// tell "lizard is active" without duplicating the heartbeat logic -- the lizard-suppression keepalive must
-// NOT run while lizard is active, or it disables the controller's autonomous touchpad haptic ticks.
-bool puckLizardActive();
-
-// Feature-command capture (diagnostic): when g_cmdCapture is on, Steam's USB feature SET/GET commands are
-// logged to serial (# FC lines) from loop context and the high-rate I45 input stream is suppressed, so the
-// connect handshake is readable. puckCmdLogDrain() must be called once per loop(). Console "FC" toggles it.
-extern bool g_cmdCapture;
-void puckCmdLogDrain(void);
-
 // Note that a controller power-off (0x9F "off!") was just relayed to `slot` (or ALL used slots for the 0xFF
 // broadcast). The puck then presents that slot as cleanly DISCONNECTED to Steam and HOLDS it there through the
 // controller's messy shutdown -- a real controller keeps streaming F1 for up to ~1s after the off command, and

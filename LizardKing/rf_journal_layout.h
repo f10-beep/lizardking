@@ -1,9 +1,7 @@
 // Fixed flash layout for the RF channel-history journal.
 //
-// Normal application images are capped immediately below this window, while
-// staged WebUSB update data starts above it. Keeping the journal outside both
-// regions lets learned RF history survive ordinary firmware updates. A full
-// board wipe still erases this application-flash window intentionally.
+// Application images are capped immediately below this window (the linker
+// refuses one that grows into it), so learned RF history survives installs.
 #pragma once
 #include <stdint.h>
 

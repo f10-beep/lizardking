@@ -47,13 +47,12 @@ usb_app_drivers      custom class drivers and the vendor / string descriptor
 | File | What |
 |---|---|
 | `LizardKing.ino` | `setup()` picks the mode from the bonds (none: Steam mode, to pair), presents USB and arms the ~8 s watchdog; `loop()` pumps each subsystem |
-| `config.*` | persisted settings |
+| `config.*` | the boot's USB presentation, the poll rate, `cfg.bin` (rumble and sleep tunables) and the first-boot wipe |
 | `bonds.*`, `identity.*` | the four controller bond slots; the unit serial |
 | `haptics.*` | host→controller haptic and rumble relay |
 | `fault_diag.*` | reset classification, hang capture, flight recorder |
-| `rf_diag.*` | RF reverse-engineering tools (sniff, capture), console-driven |
-| `serial_console.*` | the CDC console (`~` commands for the Guide and debugging) |
-| `wake_hid.*`, `status_led.*`, `pwr_switch.*` | host wake, LED, optional ColdBoot |
+| `serial_console.*` | the CDC console: the Guide's `~` protocol, haptic tuning, and a few tuning and diagnosis commands |
+| `wake_hid.*`, `status_led.*` | host wake, LED |
 | `guide/` | the LizardKing Guide (C#, Windows) |
 | `tools/flash.ps1` | `make flash`: reboots the puck into its UF2 bootloader and copies the UF2 |
 | `tools/layout/` | the keyboard layout search |

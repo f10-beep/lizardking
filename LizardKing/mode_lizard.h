@@ -1,10 +1,10 @@
-// mode_lizard.h -- configurable lizard (desktop) keyboard+mouse mode.
+// mode_lizard.h -- Steam mode's lizard (desktop) keyboard+mouse fallback.
 //
 // Not a standalone IController: lizard rides ON the puck interface (puck_hid.cpp calls rfLizard
 // when Steam is closed or in MODE_LIZARD), driving mouse(0x40)+keyboard(0x41)+consumer(0x03) on
 // the same puck HID slot. The mapping table g_lizardMap (lizard_map.h) drives all outputs; the
 // default map mirrors the original hardcoded Valve SC1 behavior. Mouse reuses the Xbox-mode
-// velocity+friction+sub-pixel glide model (g_mDiv / g_mFric).
+// velocity+friction+sub-pixel glide model (LIZARD_DIV / LIZARD_FRICTION).
 //
 // EVERY connected controller drives lizard: rfLizard merges g_in[s] across all used bond slots
 // (populated by the per-slot RF decode) onto the ONE shared desktop mouse/keyboard, so any controller

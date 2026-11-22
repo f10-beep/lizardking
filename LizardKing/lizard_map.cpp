@@ -22,20 +22,6 @@ struct LizardBindingV1 {
 static_assert(sizeof(LizardBindingV1) == 16,
 	      "version-1 lizard binding layout changed");
 
-static uint64_t lizardMaskFromV1(uint32_t m)
-{
-	uint64_t out = (uint64_t)(m & 0x0FFFFFFFu);
-	if (m & 0x10000000u)
-		out |= LZ_BTN_LSTICK_RT;
-	if (m & 0x20000000u)
-		out |= LZ_BTN_LSTICK_LF;
-	if (m & 0x40000000u)
-		out |= LZ_BTN_LSTICK_DN;
-	if (m & 0x80000000u)
-		out |= LZ_BTN_LSTICK_UP;
-	return out;
-}
-
 // KB modifier bits (from TinyUSB hid.h)
 #define KM_LCTRL 0x01u
 #define KM_LSHIFT 0x02u

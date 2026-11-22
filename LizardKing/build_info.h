@@ -1,4 +1,4 @@
-// build_info.h -- firmware build provenance, surfaced in the WebUSB panel so you can confirm EXACTLY which
+// build_info.h -- firmware build provenance, so you can confirm EXACTLY which
 // build is flashed on a board (semantic version when available, otherwise git hash, plus dirty flag).
 //
 // The values come from one of two sources, in priority order:

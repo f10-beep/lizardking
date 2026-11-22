@@ -3,7 +3,7 @@
 // Drives the RADIO peripheral directly with NO SoftDevice (BLE is never started), coexisting with TinyUSB.
 // Owns the register-level config (PHY/CRC/whitening/address, all live-tunable from the CDC console),
 // rfConfig()/rfSetAddr() to program the radio, and the rfrx/rftx DMA buffers. The puck protocol on top lives
-// in rf_link.cpp; the RE/calibration tooling in rf_diag.cpp.
+// in rf_link.cpp.
 //
 // Register-confirmed config (decoded from real-puck capture): PHY=Ble_2Mbit, ENDIAN=Big (MSB-first), whitening
 // off, addr "ibex", CRC16 poly 0x11021 init 0xFFFF (address included). On-air address = bitrev8 of stored bytes.

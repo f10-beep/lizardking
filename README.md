@@ -19,14 +19,17 @@ desktop, at the Windows login screen and in admin prompts.
 
 - Design and behaviour: [docs/DESIGN.md](docs/DESIGN.md)
 - Keyboard layout: [docs/KEYBOARD_LAYOUT.md](docs/KEYBOARD_LAYOUT.md)
+- Latency: [docs/LATENCY.md](docs/LATENCY.md)
 - What's next: [docs/ROADMAP.md](docs/ROADMAP.md)
 - Working on the code: [AGENTS.md](AGENTS.md), [CODE_MAP.md](CODE_MAP.md)
 
 ## Hardware
 
-An nRF52840 board running the Adafruit bootloader (the same boards
-[OpenPuck](https://github.com/safijari/openpuck) supports), paired with a
-Steam Controller 2.
+A Steam Controller 2 and an nRF52840 board running the Adafruit UF2
+bootloader. Tested on a [Pro Micro nRF52840](https://a.co/d/0bRC0sc9), a
+nice!nano-compatible clone sold on Amazon by Teyleten Robot (its bootloader
+reports itself as a nice!nano). Other boards that [OpenPuck](https://github.com/safijari/openpuck)
+supports should work but are untested here.
 
 ## Install
 

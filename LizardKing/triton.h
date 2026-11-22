@@ -16,10 +16,9 @@
 #define TB_Y 0x8u
 #define TB_QAM 0x10u
 #define TB_R3 0x20u
-// TB_VIEW / TB_MENU are named BACKWARDS with respect to the physical buttons: TB_VIEW is the Start-side
-// button (Xbox Start / Switch +, Options on PlayStation) and TB_MENU is the Select-side one (Xbox Back /
-// Switch -, Create/Share). Every hardware-verified mode maps them that way (mode_xinput, mode_switch_pro,
-// psShouldersByte); reading the names literally swaps Start and Select on the host.
+// TB_VIEW / TB_MENU are named BACKWARDS with respect to the physical buttons:
+// TB_VIEW is the Start-side button and TB_MENU the Select-side one; reading
+// the names literally swaps Start and Back on the host.
 #define TB_VIEW 0x40u
 #define TB_R4 0x80u
 #define TB_R5 0x100u
@@ -38,8 +37,8 @@
 #define TB_RPADC 0x400000u
 #define TB_LPADT 0x2000000u
 #define TB_LPADC 0x4000000u
-// Trigger full-pull / click bits (the controller sets these at a full ZL/ZR pull; also the target of a back-
-// paddle / QAM remap to LT/RT). psShouldersByte / the Switch builders already read these as L2/R2 / ZL/ZR.
+// Trigger click bits: the controller sets these at a full pull; LizardKing
+// replaces them with its own light-pull thresholds (deriveButtons).
 #define TB_R2 0x800000u
 #define TB_L2 0x8000000u
 
@@ -84,9 +83,8 @@ uint32_t tritonTimestamp47Us(uint8_t slot, uint16_t timestamp32us);
 void tritonTimestamp47Reset(uint8_t slot);
 
 // ---- shared decoded input (filled by rf_link.cpp once per fresh report 0x45, read by every mode) ----
-// One PuckInput per bond slot: each controller in a multi-slot puck has its own decoded input. The stream
-// modes (Switch, PS5, DS4) read g_in[s] for each active slot in their task() loop; the puck/lizard mode reads
-// g_in[slot] inside onReport45/onAuxReport to forward to hid[slot].
+// One PuckInput per bond slot: each controller in a multi-slot puck has its own decoded input. The modes
+// read g_in[slot] inside onReport45/onAuxReport.
 struct PuckInput {
 	// raw Triton buttons (TB_*); per-mode builders apply their own chord masking
 	uint32_t buttons;

@@ -1,112 +1,30 @@
 #include "config.h"
-#include "rf_link.h" // g_rxWin (poll RX window persisted here)
-#include "haptics.h" // g_hapticBlockOn, g_hapticBlockMs
+#include "haptics.h"
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
-#include <stddef.h> // offsetof (CFG_LEN_MIN, the short-file accept threshold)
 using namespace Adafruit_LittleFS_Namespace;
 
 uint8_t g_usbMode = 0;
 bool g_xbox = false;
-
-bool g_isMachineInternal = false;
-
-int g_mDiv = 64, g_mFric = 94;
-
-// Per-type button config. back default {5,6,7,8} = L4->LB R4->RB L5->L3 R5->R3 (0..11 buttons, 12..15 D-pad,
-// 16/17 PS touch/mute, 18 Switch Capture). Switch differs: QAM defaults to Capture(18), A/B swap on, and
-// trackpad haptics off. qamMap 0 = unmapped (hardcoded per-mode behavior). ledBright 0 = no override.
-// rumble 1 = enabled (default), 0 = host rumble silenced for that type.
-TypeCfg g_type[ET_COUNT] = {
-	/* ET_XBOX   */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_SWITCH */ { { 5, 6, 7, 8 }, 18, 1, 0, 0, 1 },
-	/* ET_DS4    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-	/* ET_DS5    */ { { 5, 6, 7, 8 }, 0, 0, 1, 0, 1 },
-};
-uint8_t g_etype = ET_NONE;
-
-// Trackpad -> stick mapping, off for every type by default (pads keep their touch/mouse behavior).
-uint8_t g_padStickCfg[ET_COUNT][2] = {};
-uint8_t g_padStick[2] = { PS_OFF, PS_OFF };
-
-// Live mirrors of the active type (puck modes use the harmless defaults below).
-uint8_t g_abSwap = 0;
-uint8_t g_back[4] = { 5, 6, 7, 8 };
-uint8_t g_qamMap = 0;
-uint8_t g_padHaptics = 1;
-uint8_t g_rumble = 1;
-uint8_t g_ledBright = 0;
-
-void applyActiveType()
-{
-	g_etype = etypeForMode(g_usbMode);
-	if (g_etype >=
-	    ET_COUNT) { // puck mode (Steam/Lizard): no remap, haptics on
-		g_back[0] = 5;
-		g_back[1] = 6;
-		g_back[2] = 7;
-		g_back[3] = 8;
-		g_qamMap = 0;
-		g_abSwap = 0;
-		g_padHaptics = 1;
-		g_rumble = 1;
-		g_ledBright = 0;
-		g_padStick[0] = g_padStick[1] = PS_OFF;
-		return;
-	}
-	const TypeCfg &t = g_type[g_etype];
-	for (int i = 0; i < 4; i++)
-		g_back[i] = t.back[i];
-	g_qamMap = t.qamMap;
-	g_abSwap = t.abSwap;
-	g_padHaptics = t.padHaptics;
-	g_rumble = t.rumble;
-	g_ledBright = t.ledBright;
-	g_padStick[0] = g_padStickCfg[g_etype][0];
-	g_padStick[1] = g_padStickCfg[g_etype][1];
-}
-// poll rate defaults to POLL_US_DEFAULT (250 Hz), matching the real Valve puck (see config.h). The
-// delivered report rate equals the poll rate (fresh IMU in every reply). Live-adjustable via console
-// "PR<hz>" for on-HW sweeps; session-only, so any rate persisted by an older build is ignored and boot
-// always starts at the default (see loadCfg).
 uint32_t g_pollUs = POLL_US_DEFAULT;
 
 #define CFG_FILE "/cfg.bin"
-// Struct layout/semantics changed (TypeCfg gained rumble byte); bump so old flash format is discarded ->
-// clean defaults once.
-#define CFG_MAGIC 0xCF
+// Every install wipes the file system, so the layout needn't stay compatible:
+// a file with another magic is ignored and rewritten with the defaults.
+#define CFG_MAGIC 0x1C
 struct Cfg {
-	uint8_t magic, mode, mDiv, mFric, rsvd0, pollU100, persistMode,
-		bootMode, chordBtn[3], rumbScale2;
-	// rumbScale2: host-rumble strength as PERCENT/2 (so 500% fits a byte). 0 = never set -> keep the
-	// RUMBLE_SCALE_PCT default. This revives the byte the removed rumble-strength slider used, so the
-	// on-flash layout is unchanged and an existing cfg.bin still loads.
-	// rxWin10: legacy RF tunable slot (window now fixed; ignored). lizKeep: the id9=0 hold enable (see
-	// haptics.h LIZKEEP_MS).
-	uint8_t rxWin10, lizKeep, isMachineInternal;
-	TypeCfg type[ET_COUNT]; // per-emulated-type back/qam/abSwap/padHaptics
-	// TAIL (appended after CFG_MAGIC 0xCF shipped): back4+D-pad mode assignments. New tail fields go HERE, at
-	// the end, and loadCfg accepts a short file so an upgrade keeps every existing setting -- see CFG_LEN_MIN.
-	uint8_t chordDpad[4];
-	// per-type trackpad->stick mapping: [et][0] = left pad, [et][1] = right pad (PS_*)
-	uint8_t padStick[ET_COUNT][2];
-	// RUMBLE_STYLE_*; 0xFF (short pre-tail file) -> compiled default
+	uint8_t magic;
+	// host-rumble strength as percent/2, so 500% fits a byte
+	uint8_t rumbScale2;
+	// RUMBLE_STYLE_*
 	uint8_t rumbleStyle;
-	// autonomous controller power-off on host sleep (see haptics.h g_suspendOff). 0/1; 0xFF (short
-	// pre-tail file) -> compiled default (on)
+	// power the controllers off on host sleep (see g_suspendOff), 0/1
 	uint8_t suspendOff;
 	uint8_t ext[CFG_EXT_STORAGE_BYTES];
-}; // rsvd0: unused
-
-// Shortest cfg.bin we still accept: the layout as of CFG_MAGIC 0xCF, i.e. everything before the appended tail.
-// A file that stops anywhere in the tail leaves those bytes at the 0xFF prefill loadCfg() applies, which every
-// tail field treats as "unset" and replaces with its default.
-#define CFG_LEN_MIN (offsetof(struct Cfg, chordDpad))
-
-static uint8_t g_cfgExt[CFG_EXT_STORAGE_BYTES] = {
-	0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF, 0xFF
 };
+
+static uint8_t g_cfgExt[CFG_EXT_STORAGE_BYTES];
 
 uint8_t cfgExtRead(uint8_t index)
 {
@@ -122,30 +40,11 @@ void cfgExtWrite(uint8_t index, uint8_t value)
 void saveCfg()
 {
 	Cfg c = { CFG_MAGIC,
-		  g_usbMode,
-		  (uint8_t)g_mDiv,
-		  (uint8_t)g_mFric,
-		  0,
-		  (uint8_t)(g_pollUs / 100),
-		  0,
-		  0xFF,
-		  { 0xFF, 0xFF, 0xFF },
-		  (uint8_t)(g_rumbleScale / 2), // host-rumble strength, pct/2
-		  (uint8_t)(g_rxWin / 10),
-		  g_lizKeep,
-		  (uint8_t)(g_isMachineInternal ? 0xEE : 0),
-		  {},
-		  { 0xFF, 0xFF, 0xFF, 0xFF },
-		  {},
+		  (uint8_t)(g_rumbleScale / 2),
 		  g_rumbleStyle,
 		  g_suspendOff,
 		  {} };
 	memcpy(c.ext, g_cfgExt, sizeof c.ext);
-	for (int i = 0; i < ET_COUNT; i++) {
-		c.type[i] = g_type[i];
-		c.padStick[i][0] = g_padStickCfg[i][0];
-		c.padStick[i][1] = g_padStickCfg[i][1];
-	}
 	InternalFS.remove(CFG_FILE);
 	File f(InternalFS);
 	if (f.open(CFG_FILE, FILE_O_WRITE)) {
@@ -158,77 +57,24 @@ void loadCfg()
 {
 	Cfg c;
 	memset(g_cfgExt, 0xFF, sizeof g_cfgExt);
-	// 0xFF prefill: bytes a SHORT (pre-tail) cfg.bin never wrote stay 0xFF, which is not a valid mode/flag, so
-	// each tail field below falls back to its compiled default instead of reading whatever was on the stack.
-	memset(&c, 0xFF, sizeof c);
 	File f(InternalFS);
-	bool consume = false;
 	if (f.open(CFG_FILE, FILE_O_READ)) {
-		int got = f.read((uint8_t *)&c, sizeof c);
-		// Accept a file that is short only in the appended tail (>= CFG_LEN_MIN): an upgrade from a build
-		// predating the tail keeps mode/paddles/chords instead of silently reverting to factory defaults.
-		// Anything shorter, or a stale magic, is a real layout change -> discard and use defaults.
-		if (got >= (int)CFG_LEN_MIN && c.magic == CFG_MAGIC) {
-			const int extOff = (int)offsetof(struct Cfg, ext);
-			if (got > extOff) {
-				int n = got - extOff;
-				if (n > (int)sizeof g_cfgExt)
-					n = sizeof g_cfgExt;
-				memcpy(g_cfgExt, c.ext, (size_t)n);
-			}
-			g_mDiv = c.mDiv ? c.mDiv : 64;
-			g_mFric = c.mFric;
-			for (int i = 0; i < ET_COUNT; i++)
-				g_type[i] = c.type[i];
-			// poll rate is fixed; rewrite cfg so the persisted byte matches the new default.
-			if (c.pollU100 != (uint8_t)(POLL_US_DEFAULT / 100))
-				consume = true;
-			// Pad->stick mapping: 0xFF (a file predating this tail field) or an out-of-range
-			// value keeps the compiled default (off).
-			for (int i = 0; i < ET_COUNT; i++)
-				for (int k = 0; k < 2; k++)
-					if (c.padStick[i][k] <= PS_MAX)
-						g_padStickCfg[i][k] =
-							c.padStick[i][k];
-			// Missing extension bytes alone do not force a config rewrite.
-			if (got < (int)offsetof(struct Cfg, ext))
-				consume = true;
-
-			// lizard-suppression keepalive enable (0/1; anything else = a pre-0xCE cfg leaked
-			// through -> keep the on default)
-			if (c.lizKeep <= 1)
-				g_lizKeep = c.lizKeep;
-
-			// This variable previously used to have values 0/1.
-			// Use a seperate trigger value 0xEE if we want to emulate a Steam Machine's
-			// internal receiver.
-			g_isMachineInternal = (c.isMachineInternal == 0xEE);
-
-			// host-rumble strength (pct/2; 0 = never set, or a cfg.bin from before this
-			// field was revived -> keep the RUMBLE_SCALE_PCT default)
-			if (c.rumbScale2) {
-				uint16_t pct = (uint16_t)c.rumbScale2 * 2;
-				if (pct < RUMBLE_SCALE_MIN)
-					pct = RUMBLE_SCALE_MIN;
-				else if (pct > RUMBLE_SCALE_MAX)
-					pct = RUMBLE_SCALE_MAX;
+		bool ok = f.read((uint8_t *)&c, sizeof c) == (int)sizeof c &&
+			  c.magic == CFG_MAGIC;
+		f.close();
+		if (ok) {
+			memcpy(g_cfgExt, c.ext, sizeof g_cfgExt);
+			uint16_t pct = (uint16_t)c.rumbScale2 * 2;
+			if (pct >= RUMBLE_SCALE_MIN && pct <= RUMBLE_SCALE_MAX)
 				g_rumbleScale = pct;
-			}
-			// host-rumble style (0xFF = short pre-tail file -> keep the default)
 			if (c.rumbleStyle <= RUMBLE_STYLE_MAX)
 				g_rumbleStyle = c.rumbleStyle;
-			// suspend power-off enable (0xFF = a cfg.bin predating this tail field -> keep the on default)
 			if (c.suspendOff <= 1)
 				g_suspendOff = c.suspendOff;
-
-			// The poll RX window is now FIXED (g_rxWin is const) -- any persisted rxWin10 is ignored.
+			return;
 		}
-		f.close();
 	}
-	// resolve the active emulated type's settings into the live mirrors the mode builders read
-	applyActiveType();
-	if (consume)
-		saveCfg();
+	saveCfg();
 }
 
 // A UF2 install writes this block as the image has it (word 0 blank), and the

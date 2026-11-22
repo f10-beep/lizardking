@@ -15,13 +15,11 @@ using namespace Adafruit_LittleFS_Namespace;
 #include "haptics.h"
 #include "rf_link.h"
 #include "puck_hid.h"
-#include "rf_diag.h"
 #include "usb_app_drivers.h"
 #include "lizard_map.h"
 #include "serial_console.h"
 #include "wake_hid.h"
 #include "status_led.h"
-#include "pwr_switch.h"
 #include "fault_diag.h"
 #include "usb_tx.h"
 #include <stdio.h>
@@ -84,9 +82,6 @@ void setup()
 {
 	genSerial();
 	ledInit();
-#if OPK_PWR_SWITCH
-	pwrSwitchInit();
-#endif
 	// seed defaults so unbonded slots don't share the discovery address
 	for (int s = 0; s < NSLOT; s++)
 		rfGenSessionAddr(s);
@@ -119,7 +114,6 @@ void setup()
 	Serial.printf("# LizardKing up: unit=%s board=%s mode=%s\n", g_unit,
 		      g_board, g_active->isPuck() ? "steam" : "lizardking");
 	faultDiagBoot();
-	clockDiagBoot();
 	watchdogStart();
 }
 
@@ -129,7 +123,6 @@ void loop()
 	faultDiagBeat();
 	faultDiagStackTick();
 	faultDiagFlightTick();
-	clockDiagTick();
 	if (g_dirty) {
 		g_dirty = false;
 		// a bond write stalls interrupts for ms: bracket it in the
@@ -139,23 +132,17 @@ void loop()
 	}
 	// Each stage leaves a breadcrumb, so after a watchdog reset the next
 	// boot reports which stage wedged.
-	faultDiagSetStage(1);
+	faultDiagSetStage(0);
 	g_active->task();
-	faultDiagSetStage(2);
+	faultDiagSetStage(1);
 	serialConsolePoll();
-	faultDiagSetStage(3);
-	rfDiagTask();
-	faultDiagSetStage(4);
+	faultDiagSetStage(2);
 	rfLinkTask();
-	faultDiagSetStage(5);
+	faultDiagSetStage(3);
 	hapticTask();
-	faultDiagSetStage(6);
+	faultDiagSetStage(4);
 	ledTask();
-#if OPK_PWR_SWITCH
-	pwrSwitchTask();
-#endif
-	faultDiagSetStage(8);
+	faultDiagSetStage(5);
 	// reports drain here, in the loop: sending off-loop jitters the RF poll
 	usbTxPump();
-	puckCmdLogDrain();
 }

@@ -413,10 +413,21 @@ What did not work, so it isn't tried again:
 | `~r` | toggles a one-line-per-report trace of the trackball |
 | `~w` | toggles a trace of the scroll wheel: `W` per report, and `WS units hires=0/1` per wheel report sent (1/120 notches while the host enabled the multiplier) |
 | `~m` | dumps the keyboard key table (`KM` lines) |
-| `~d` | shows / hides the guide drive |
 | `~b` | reboots into the UF2 bootloader (`make flash`) |
 | `~g` | Guide practice mode: hold the host's input for another second |
 | `~h` | Guide practice mode over: hand the input back now |
+
+Plain commands, for tuning and diagnosis:
+
+| Command | Does |
+|---------|------|
+| `SS` | one line: poll rate, fresh reports per second, lost replies |
+| `PR<hz>` | RF poll rate for this session, 100–1000 Hz |
+| `RS<pct>` | host-rumble strength, persisted |
+| `RY<n>` | host-rumble style, persisted |
+| `TR` | a test buzz at the current style and strength |
+| `SO` | power the controllers off on host sleep, on or off, persisted |
+| `FR` | reprints the flight recorder from the last watchdog hang |
 
 ## Next
 

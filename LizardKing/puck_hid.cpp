@@ -16,13 +16,6 @@
 #include <string.h>
 
 uint8_t g_fwdNewOnly = 1;
-// Content dedup for the Steam input forward: only forward a 0x45/0x42 report when its body EXCLUDING the
-// counter byte differs from the last one forwarded on that slot. The controller's counter (rep[1]) FREE-RUNS
-// -- it advances on every reply even with static input -- so the seq-based g_fwdNewOnly can't suppress true
-// repeats, and a poll rate above the controller's ~250 Hz sample rate forwards identical inputs with only the
-// counter bumped (host tester reads >250/s for a <=250 Hz controller). Content dedup is what the real puck
-// effectively does. On by default; console "CD" toggles for A/B.
-uint8_t g_fwdContentDedup = 1;
 SteamPuckController g_steamPuck;
 
 // millis() a power-off (0x9F) was last relayed to each slot; 0 = never. See puckNotePowerOff() / task().
@@ -33,7 +26,7 @@ static volatile unsigned long g_powerOffMs[NSLOT] = { 0 };
 void puckNotePowerOff(uint8_t slot)
 {
 	if (slot >=
-	    // 0xFF broadcast ("all off": host suspend, panel/test button)
+	    // 0xFF broadcast ("all off": host suspend)
 	    NSLOT) {
 		for (int s = 0; s < NSLOT; s++)
 			if (g_slot[s].used)
@@ -129,65 +122,6 @@ static const uint8_t PUCK_LIZARD_HID_DESC[] = {
 
 static Adafruit_USBD_HID hid[NSLOT];
 
-// ---- feature-command capture (diagnostic) ---------------------------------------------------------------
-// Log the USB feature command channel (Steam's SET/GET) to serial to see the connect handshake -- WITHOUT a
-// Serial.printf on the fragile 800B usbd task (that path can blow the stack -> LOCKUP; it's why production
-// avoids printf here). handleSet/handleGet (usbd task) push a compact record under PRIMASK; puckCmdLogDrain()
-// prints them from loop() context. When g_cmdCapture is on, the high-rate I45 input stream is also suppressed
-// (rf_link) so the command sequence is readable. Toggle from the console with "FC".
-bool g_cmdCapture = true;
-struct FCmdRec {
-	uint8_t dir; // 0 = SET (host->puck write), 1 = GET (host read)
-	uint8_t iface; // HID interface index = bond slot the command hit
-	uint8_t rid, cmd, len, b[10];
-};
-static FCmdRec g_fc[32];
-static volatile uint8_t g_fcHead, g_fcTail;
-static void fcPush(uint8_t dir, int iface, uint8_t rid, uint8_t cmd,
-		   uint8_t len, const uint8_t *b, uint8_t n)
-{
-	if (!g_cmdCapture)
-		return;
-	uint32_t pm = __get_PRIMASK();
-	__disable_irq();
-	uint8_t h = g_fcHead, nx = (uint8_t)((h + 1) & 31);
-	if (nx !=
-	    // drop-newest when full (loop drains fast); never block the usbd
-	    // task
-	    g_fcTail) {
-		g_fc[h].dir = dir;
-		g_fc[h].iface = (uint8_t)iface;
-		g_fc[h].rid = rid;
-		g_fc[h].cmd = cmd;
-		g_fc[h].len = len;
-		for (uint8_t i = 0; i < 10; i++)
-			g_fc[h].b[i] = (i < n) ? b[i] : 0;
-		g_fcHead = nx;
-	}
-	__set_PRIMASK(pm);
-}
-void puckCmdLogDrain(void)
-{
-	// boosted: runs at Steam's feature-storm rate and CDC flush enters the same TinyUSB DMA claim window
-	// as HID sends (the issue-72 livelock; see usb_tx.cpp)
-	usbTxBoost();
-	while (g_fcHead != g_fcTail) {
-		if (Serial.availableForWrite() < 70)
-			// don't stall loop on CDC backpressure; resume next
-			// iteration
-			break;
-		FCmdRec r = g_fc[g_fcTail];
-		g_fcTail = (uint8_t)((g_fcTail + 1) & 31);
-		Serial.printf("# FC %s if=%u rid=%u cmd=%02X len=%u:",
-			      r.dir ? "GET" : "SET", r.iface, r.rid, r.cmd,
-			      r.len);
-		for (uint8_t i = 0; i < 10; i++)
-			Serial.printf(" %02X", r.b[i]);
-		Serial.println();
-	}
-	usbTxUnboost();
-}
-
 // ===================== seamless LIZARD decision =====================
 // Steam, while running, re-sends settings report 0x87 (lizard-off) every ~3s as a heartbeat (captured on HW),
 // and ANY OUTPUT report likewise stamps g_steamAliveMs. When the heartbeat stops we fall back to lizard, so the
@@ -213,11 +147,6 @@ static inline bool lizardActive()
 	return modeIsPuck(g_usbMode) &&
 	       (g_usbMode == MODE_LIZARD ||
 		(g_autoLizard && !steamDrivingGamepad()));
-}
-// Public accessor for the haptic layer (haptics.cpp gates the lizard-suppression keepalive on this).
-bool puckLizardActive()
-{
-	return lizardActive();
 }
 static inline void hostStampAlive()
 {
@@ -251,9 +180,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	// feature-0x01 passthrough path instead.
 	if (type == HID_REPORT_TYPE_OUTPUT) {
 		if (rid >= 0x80 && rid <= 0x89) {
-			// capture ALL OUTPUT reports (even un-relayed) for the 'H' dump
-			hapLogAdd((uint8_t)slot, rid, b, n);
-
 			// ANY Steam OUTPUT report (not just the 0x87 heartbeat) means Steam is present and driving ->
 			// leave lizard for gamepad NOW, so a haptic arriving before the first 0x87 isn't relayed while
 			// we're still presenting lizard (-> buzz loop).
@@ -274,7 +200,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 		// (issues #163 / #166): "Soft Press" survived because it rides 0x82 ID_OUT_REPORT_HAPTIC_COMMAND,
 		// while every pulse-based click was thrown away. Pulses are self-terminating (repeat_count in the
 		// payload), so there is no latch to strand and no stop frame to lose.
-		if (g_hapticRelay && rid >= 0x80 && rid <= 0x86 && n >= 1 &&
+		if (rid >= 0x80 && rid <= 0x86 && n >= 1 &&
 		    hapticRelaySlotOk(slot) && !lizardActive() && !muted) {
 			if (!haptic82Blocked(slot)) {
 				relayEnqueue(rid, b,
@@ -285,20 +211,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			}
 		}
 
-#if OPK_LOG
-		// Per-report Serial echo: gated to the diagnostic build only. handleSet runs on the TinyUSB device
-		// task, whose FreeRTOS stack is just 800 bytes; a Serial.printf there costs 200-500B and, stacked
-		// under TinyUSB's control-transfer frames + a preempting USB ISR, can blow the stack -> the exact
-		// SP-corruption-during-exception-entry that shows up as RR_LOCKUP. Production keeps this path
-		// printf-free; the same data is already in the OPK_LOG capture ring (hapLogAdd) for the WebUSB panel.
-		if (Serial.availableForWrite() > 80) {
-			Serial.printf("# OUT if%d rid=%02X n=%u:", slot, rid,
-				      n);
-			for (uint16_t i = 0; i < n && i < 14; i++)
-				Serial.printf(" %02X", b[i]);
-			Serial.println();
-		}
-#endif
 		return;
 	}
 	if (type != HID_REPORT_TYPE_FEATURE || n < 1)
@@ -308,12 +220,7 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	const uint8_t *pl = b + 2;
 	uint16_t pln = (n >= 2) ? n - 2 : 0;
 
-	// Capture EVERY feature SET (the whole cmd channel: 0x83 attr, 0xAE strings, 0xB4 conn, 0xA2/A3 bond, the
-	// feature-1 relay, AND any host battery query) to the WebUSB ring so the panel's capture view shows it.
-	hapLogAdd((uint8_t)slot, cmd, b, n);
-	// ...and to the serial feature-command capture (diagnostic; drained in loop, see puckCmdLogDrain).
-	fcPush(0, slot, rid, cmd, len, pl, pln > 10 ? 10 : (uint8_t)pln);
-	// ...and to the flight recorder (survives a watchdog reset). This runs ON the fragile usbd task, so the
+	// Every feature SET goes to the flight recorder (survives a watchdog reset). This runs ON the fragile usbd task, so the
 	// command flood that (theory) overflows it lands in the post-mortem trail rather than being lost with USB.
 	faultDiagTrace(FR_SET, (uint16_t)((rid << 8) | cmd));
 
@@ -342,12 +249,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 
 	// report 0x01 = raw passthrough -> queue for RF relay to the controller
 	if (rid == 1 && n >= 2) {
-		// (feature-1 commands -- haptics, LED, 0x87 settings, 0x9F power-off -- are captured by the
-		// general feature-SET hapLogAdd above.)
-
-		bool muted = g_resumeMs &&
-			     millis() - g_resumeMs < POST_RESUME_MUTE_MS;
-
 		// Reports in relayQuery will be forwarded to the controller if rid==1 and may be answered locally
 		// if it makes sense and rid==2.
 
@@ -397,12 +298,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			// multi-register 0x87 settings blocks (LED brightness) and calibration writes exceed the old
 			// 18B cap, and the chopped frames were why those settings never landed on the controller.
 			uint8_t rl = (len <= pln) ? len : (uint8_t)pln;
-#if OPK_LOG
-			if (len > RELAY_MAXP && Serial.availableForWrite() > 60)
-				Serial.printf(
-					"# RELAY TRUNC cmd=%02X len=%u>%u\n",
-					cmd, len, (unsigned)RELAY_MAXP);
-#endif
 			relayEnqueue(cmd, pl, rl, false, (uint8_t)slot,
 				     relayQuery);
 
@@ -425,17 +320,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 			S.resp_len = 63;
 		}
 	}
-#if OPK_LOG
-	// Diagnostic-build only -- see the OUTPUT-path note: no Serial.printf on the 800B usbd-task stack in
-	// production (LOCKUP mitigation). The feature SET is already captured to the OPK_LOG ring above.
-	if (Serial.availableForWrite() > 80) {
-		Serial.printf("# SET if%d rid=%02X cmd=%02X len=%u:", slot, rid,
-			      cmd, len);
-		for (uint16_t i = 0; i < n && i < 14; i++)
-			Serial.printf(" %02X", b[i]);
-		Serial.println();
-	}
-#endif
 	if (rid == 2) {
 		memset(S.resp, 0, sizeof S.resp);
 		S.resp_len = 0;
@@ -448,16 +332,9 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	switch (cmd) {
 	case IBEX_CMD_GET_ATTRIBUTES_VALUES: // 0x83
 		S.resp[0] = IBEX_CMD_GET_ATTRIBUTES_VALUES;
-		if (g_isMachineInternal) {
-			S.resp[1] = sizeof ATTR83_MACHINE;
-			memcpy(S.resp + 2, ATTR83_MACHINE,
-			       sizeof ATTR83_MACHINE);
-			S.resp_len = 63;
-		} else {
-			S.resp[1] = sizeof ATTR83_PUCK;
-			memcpy(S.resp + 2, ATTR83_PUCK, sizeof ATTR83_PUCK);
-			S.resp_len = 63;
-		}
+		S.resp[1] = sizeof ATTR83_PUCK;
+		memcpy(S.resp + 2, ATTR83_PUCK, sizeof ATTR83_PUCK);
+		S.resp_len = 63;
 		break;
 	case IBEX_CMD_GET_STRING_ATTRIBUTE: { // 0xAE
 		uint8_t idx = pln > 0 ? pl[0] : 1;
@@ -512,9 +389,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	case IBEX_CMD_ENABLE_PAIRING: // 0xAD
 		// TODO: Check if this should be relayed?
 		g_pairing = (pln > 0 && pl[0] != 0);
-#if OPK_LOG
-		Serial.printf("# pairing %s\n", g_pairing ? "ON" : "off");
-#endif
 		S.resp[0] = IBEX_CMD_ENABLE_PAIRING;
 		S.resp[1] = 0;
 		S.resp_len = 63;
@@ -537,10 +411,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 					relayClearSlot((uint8_t)slot);
 			}
 			g_dirty = true;
-#if OPK_LOG
-			Serial.printf("# slot %d %s\n", slot,
-				      recEmpty(pl) ? "cleared" : "bonded");
-#endif
 		}
 		S.resp[0] = IBEX_CMD_TRITON_A2_OBSERVED_PAIRING_RECORD;
 		S.resp[1] = 0;
@@ -617,42 +487,6 @@ static uint16_t handleGet(int slot, uint8_t rid, hid_report_type_t type,
 	// Flight recorder (every GET, un-deduped): a read STORM -- e.g. the "AE x39" identity hammering seen before
 	// the identity fix -- is itself a wedge signal, so we want it filling the post-mortem trail if it happens.
 	faultDiagTrace(FR_GET, (uint16_t)((rid << 8) | S.resp[0]));
-	// Battery diagnostic: in gamepad (Steam) mode battery is read host-side via the feature channel, NOT the
-	// forwarded 0x43 (that path is verbatim-identical to lizard mode, where battery works). Capture what Steam
-	// GETs so a WebUSB-panel (or CDC) capture in Steam mode shows the report id it polls for battery (then we
-	// answer it with g_battery in handleSet). De-duped by report id so the high-rate polling doesn't flood the
-	// ring/console -- a freshly-requested id is logged once, then again only after 1s.
-	{
-		// Dedup by (rid, interface, response-cmd) so each interface's GET is captured (not collapsed to one
-		// line across all 4 slots) -- the per-interface bond/identity responses are exactly what we need to
-		// see -- while still not flooding on high-rate same-report polling.
-		static uint8_t lastRid = 0xFF, lastSlot = 0xFF, lastCmd = 0xFF;
-		static unsigned long lastMs = 0;
-		if (rid != lastRid || (uint8_t)slot != lastSlot ||
-		    S.resp[0] != lastCmd || millis() - lastMs > 1000) {
-			lastRid = rid;
-			lastSlot = (uint8_t)slot;
-			lastCmd = S.resp[0];
-			lastMs = millis();
-			// ring marker 0xFC = "host feature GET" (panel renders it as "GET rid=.."); payload = what we returned
-			hapLogAdd(0xFC, rid, S.resp, n);
-			// serial feature-command capture: what Steam READ on this interface + our answer
-			fcPush(1, slot, rid, S.resp[0], (uint8_t)n, S.resp + 2,
-			       10);
-#if OPK_LOG
-			// Diagnostic build only -- no Serial.printf on the 800B usbd-task stack in production (LOCKUP
-			// mitigation). The GET is captured to the OPK_LOG ring above for the WebUSB panel.
-			if (Serial.availableForWrite() > 80)
-				Serial.printf(
-					"# GET if%d rid=%02X reqlen=%u -> %02X %02X %02X (batt=%u%%)\n",
-					slot, rid, reqlen, S.resp[0], S.resp[1],
-					S.resp[2],
-					(slot >= 0 && slot < NSLOT) ?
-						g_battery[slot] :
-						0);
-#endif
-		}
-	}
 	return n;
 }
 
@@ -682,13 +516,7 @@ static setcb_t SETCB[NSLOT] = { setcb0, setcb1, setcb2, setcb3 };
 // ===================== IController =====================
 void SteamPuckController::begin()
 {
-	if (g_isMachineInternal) {
-		// Emulating a Steam Machine's internal receiver.
-		USBDevice.setID(0x28DE, 0x1305);
-	} else {
-		// Emulating a Steam Controller Puck.
-		USBDevice.setID(0x28DE, 0x1304);
-	}
+	USBDevice.setID(0x28DE, 0x1304);
 	USBDevice.setVersion(0x0201); // bcdUSB 2.01
 	USBDevice.setDeviceVersion(2);
 
@@ -788,8 +616,9 @@ void SteamPuckController::onReport45(int slot, const uint8_t *rep, bool fresh,
 		// Content dedup: the counter byte (rep[1]) free-runs, so drop a report whose body AFTER the
 		// counter is byte-identical to the last one forwarded on this slot -- a true repeat (same
 		// physical input, bumped counter), not a new sample. Caps delivery at the controller's real
-		// distinct-report rate instead of the (higher) poll rate. See g_fwdContentDedup above.
-		if (send && g_fwdContentDedup && blen >= 2) {
+		// distinct-report rate instead of the (higher) poll rate, as the real puck
+		// effectively does (a host tester reads >250/s otherwise).
+		if (send && blen >= 2) {
 			static uint8_t lastBody[NSLOT][53];
 			static uint8_t lastBodyLen[NSLOT] = { 0 };
 			uint8_t clen =
@@ -829,9 +658,7 @@ void SteamPuckController::onAuxReport(int slot, uint8_t rid,
 	// battery). Padding the report to the descriptor-declared length broke battery in both lizard and
 	// Steam, so it's reverted -- send exactly what the controller sent.
 	if (g_slot[slot].used && hid[slot].ready()) {
-		// capture the pushed status report (0x43 battery / 0x44) device->host for the WebUSB panel: this is
-		// the channel Steam actually reads battery from; marker 0xFB = "->host push".
-		hapLogAdd(0xFB, rid, data, n);
+		// the pushed status report (0x43 battery / 0x44) is the channel Steam actually reads battery from
 		usbTxHid(&hid[slot], rid, data, n);
 	}
 }
@@ -986,7 +813,6 @@ void SteamPuckController::task()
 		if (g_powerOffMs[s] && g_powerOffMs[s] != poHandled[s]) {
 			poHandled[s] = g_powerOffMs[s];
 			uint8_t st = 0x01;
-			hapLogAdd(0xFB, 0x79, &st, 1); // ->host push (capture)
 			usbTxHid(&hid[s], 0x79, &st, 1);
 			usbConn[s] = false;
 			discEdgeMs[s] = millis();
@@ -1008,7 +834,7 @@ void SteamPuckController::task()
 					  0;
 		// The DISCONNECT edge (0x79=01) also needs resending: it used to be sent exactly ONCE, so a single
 		// dropped report left Steam believing the controller was still connected indefinitely -- observed as
-		// "WebUSB panel shows the slot DOWN (g_connReplyMs stale) while Steam still lists it connected, and the
+		// "the slot is DOWN (g_connReplyMs stale) while Steam still lists it connected, and the
 		// controller light is solid (it re-adopted the beacon) but no input flows." Resend disc every 750ms but
 		// BOUNDED to DISC_RESEND_MS so a lost packet converges without the forever-spam the "real puck sends
 		// 0x79 once" note warns against.
@@ -1024,7 +850,6 @@ void SteamPuckController::task()
 			    usbConn[s])
 				discEdgeMs[s] = millis();
 			uint8_t st = conn ? 0x02 : 0x01;
-			hapLogAdd(0xFB, 0x79, &st, 1); // ->host push (capture)
 			usbTxHid(&hid[s], 0x79, &st, 1);
 			usbConn[s] = conn;
 			last79[s] = millis();
@@ -1048,7 +873,6 @@ void SteamPuckController::task()
 					mag = 95;
 				s7b[8] = (uint8_t)(0u - (uint8_t)mag);
 			}
-			hapLogAdd(0xFB, 0x7B, s7b, 12); // ->host push (capture)
 			usbTxHid(&hid[s], 0x7B, s7b, 12);
 			last7B[s] = millis();
 		}
@@ -1066,7 +890,6 @@ void SteamPuckController::task()
 			uint8_t b43[14] = { 0 };
 			b43[0] = st; // ucChargeState
 			b43[1] = g_battery[s]; // ucBatteryLevel (percent)
-			hapLogAdd(0xFB, 0x43, b43, 14); // ->host push (capture)
 			usbTxHid(&hid[s], 0x43, b43, sizeof b43);
 			last43[s] = millis();
 		}
