@@ -1,6 +1,6 @@
 # LizardKing design
 
-The product behaviour, implemented mostly in `LizardKing/mode_eliz.cpp`.
+The product behaviour, implemented mostly in `LizardKing/mode_lizardking.cpp`.
 
 Goal: one fixed, predictable layout that behaves the same everywhere: in
 games, on the desktop, at the Windows login screen and in admin (UAC)
@@ -274,7 +274,7 @@ around any of Windows' safeguards:
   ordinary startup entry in `HKCU\...\Run`, visible in Settings > Apps >
   Startup. Nothing needs admin rights. Uninstall from the tray icon
   removes both.
-- The volume is synthesized on the fly (`LizardKing/eliz_drive.cpp`): a FAT12
+- The volume is synthesized on the fly (`LizardKing/guide_drive.cpp`): a FAT12
   boot sector, FAT and root directory computed from the README and the exe
   embedded at build time as `LizardKing/guide_exe.h` (generated with `xxd`,
   gitignored). Writes are refused.

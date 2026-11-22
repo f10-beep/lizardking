@@ -30,8 +30,6 @@ pass.
   never replaced the vector and the hang capture never ran (upstream too).
   Fixed in the import; confirm on hardware that a watchdog reset still
   reports cleanly.
-- **Naming.** `mode_eliz`, `MODE_ELIZ` and `EnhancedLizardController` date
-  from the fork; rename once the structure settles.
 - **ColdBoot** (`pwr_switch`, compiled out by default): keep or drop.
 - **USB ID.** Get a pid.codes ID before publishing; `1209:0001` is the
   test ID.

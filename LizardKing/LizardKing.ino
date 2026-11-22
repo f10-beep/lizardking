@@ -102,7 +102,7 @@ void setup()
 		if (g_slot[s].used)
 			rfGenSessionAddr(s);
 	// unpaired (a fresh install) boots into Steam mode, ready to pair
-	g_usbMode = bondedSlotCount() ? MODE_ELIZ : MODE_STEAM;
+	g_usbMode = bondedSlotCount() ? MODE_LIZARDKING : MODE_STEAM;
 
 	g_xbox = !modeIsPuck(g_usbMode);
 	g_active = controllerFor(g_usbMode);

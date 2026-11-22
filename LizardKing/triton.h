@@ -94,7 +94,7 @@ struct PuckInput {
 	uint8_t lt, rt; // triggers scaled 0..255 (trigU8)
 	int16_t lpx, lpy, rpx, rpy; // left / right trackpad coords (int16)
 	// trackpad pressure: 0 = no contact; the controller's own click
-	// threshold sits near 9000 (see docs/ENHANCED_LIZARD.md)
+	// threshold sits near 9000 (see docs/DESIGN.md)
 	int16_t lpz, rpz;
 	int16_t ax, ay, az; // accelerometer
 	int16_t gx, gy, gz; // gyroscope

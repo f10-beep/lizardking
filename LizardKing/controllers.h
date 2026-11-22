@@ -1,6 +1,6 @@
 // controllers.h -- the USB presentation for this boot.
 //
-// Two controllers exist: LizardKing (mode_eliz) and the Steam puck
+// Two controllers exist: LizardKing (mode_lizardking) and the Steam puck
 // (puck_hid), kept for pairing. Exactly one is active per boot, selected by
 // g_usbMode.
 //   begin()      -- set the USB identity and register the interfaces.

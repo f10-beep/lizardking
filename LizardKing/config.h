@@ -28,7 +28,7 @@
 // MODE_LIZARD is Steam mode's keyboard/mouse fallback while Steam is closed.
 #define MODE_STEAM 0
 #define MODE_LIZARD 3
-#define MODE_ELIZ 13
+#define MODE_LIZARDKING 13
 
 static inline bool modeIsPuck(uint8_t m)
 {

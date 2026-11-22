@@ -799,10 +799,11 @@ void hapticTask()
 		const bool pureLizard = (g_usbMode == MODE_LIZARD);
 		if (!modeIsPuck(g_usbMode) || pureLizard) {
 			// LizardKing draws its own pad ticks at a gain it
-			// controls (mode_eliz.cpp); the controller's are as
+			// controls (mode_lizardking.cpp); the controller's are as
 			// strong as a click and blur the two together.
-			bool wantAuto = pureLizard || (g_usbMode != MODE_ELIZ &&
-						       g_padHaptics != 0);
+			bool wantAuto = pureLizard ||
+					(g_usbMode != MODE_LIZARDKING &&
+					 g_padHaptics != 0);
 			for (int s = 0; s < NSLOT; s++) {
 				if (!g_slot[s].used || !hapticLinkUp(s)) {
 					// re-land id9 on the next (re)connect: a fresh controller defaults to

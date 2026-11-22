@@ -89,6 +89,9 @@ endif
 
 build: guide-header
 	./gen_version.sh
+	# arduino-cli never drops a deleted or renamed source from its copy of
+	# the sketch, and would link it in; the core stays cached
+	rm -rf $(BUILD_PATH)/sketch
 	arduino-cli compile -b $(FQBN) --build-path $(BUILD_PATH) \
 		--output-dir $(OUTPUT_DIR) \
 		--build-property "build.extra_flags=$(USB_FLAGS)" \

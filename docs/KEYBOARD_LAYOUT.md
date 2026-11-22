@@ -1,6 +1,6 @@
 # LizardKing keyboard layout
 
-Status: **applied** (`KEYMAP` in `LizardKing/mode_eliz.cpp`).
+Status: **applied** (`KEYMAP` in `LizardKing/mode_lizardking.cpp`).
 
 ## How the keyboard works (recap)
 

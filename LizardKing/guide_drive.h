@@ -1,4 +1,4 @@
-// eliz_drive.h -- LizardKing's read-only "guide drive" (USB mass storage).
+// guide_drive.h -- LizardKing's read-only "guide drive" (USB mass storage).
 //
 // The puck carries its Windows Guide (tools/guide) so it can be opened on any
 // PC: a small read-only FAT volume with the Guide's exe and a README. Nothing
@@ -11,9 +11,9 @@
 #pragma once
 
 // add the mass-storage interface; call after the other USB interfaces
-void elizDriveBegin();
+void guideDriveBegin();
 // hides the drive on a new host session (plug-in, wake) and while the Guide
 // holds the serial port
-void elizDriveTask();
+void guideDriveTask();
 // show / hide the drive; returns whether it is shown now
-bool elizDriveToggle();
+bool guideDriveToggle();

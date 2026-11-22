@@ -1,5 +1,5 @@
-#include "mode_eliz.h"
-#include "eliz_drive.h"
+#include "mode_lizardking.h"
+#include "guide_drive.h"
 #include "xinput_descriptors.h"
 #include "triton.h"
 #include "config.h"
@@ -12,25 +12,25 @@
 #include <math.h>
 #include <string.h>
 
-EnhancedLizardController g_elizCtl;
-bool g_elizTrace;
+LizardKingController g_lizardKingCtl;
+bool g_lkTrace;
 
-// ---- tunables (see docs/ENHANCED_LIZARD.md) ----
+// ---- tunables (see docs/DESIGN.md) ----
 
 // a layer change must hold this long before buttons follow it
-#define ELIZ_SWITCH_MS 30u
+#define LK_SWITCH_MS 30u
 
 // Pad clicks come from pressure: the controller's own click bit needs
 // ~8900, which tires the thumb. ON/OFF give hysteresis like its own click.
-#define ELIZ_CLICK_ON 3200
-#define ELIZ_CLICK_OFF 2300
+#define LK_CLICK_ON 3200
+#define LK_CLICK_OFF 2300
 // With both thumbs on the pads (typing) clicks are lighter still: there is
 // no cursor for a stray click to disturb, and typing wants a light touch.
-#define ELIZ_KEY_CLICK_ON 2400
-#define ELIZ_KEY_CLICK_OFF 1700
+#define LK_KEY_CLICK_ON 2400
+#define LK_KEY_CLICK_OFF 1700
 
 // pad counts per cursor pixel at the default sensitivity (g_mDiv 64)
-#define ELIZ_PX_DIV 160
+#define LK_PX_DIV 160
 
 // While touching, the cursor chases the thumb's absolute (1:1) position,
 // closing a fraction of the gap each report: all of it at thumb speeds up
@@ -39,31 +39,31 @@ bool g_elizTrace;
 // so it never drifts. The speed is smoothed by SPEED_ALPHA and starts from
 // the ball's speed when the thumb lands on a moving ball, so a tap's jitter
 // cannot fling it.
-#define ELIZ_FOLLOW_SLOW 1.0f
-#define ELIZ_FOLLOW_FAST 8.0f
-#define ELIZ_FOLLOW_MIN 0.3f
-#define ELIZ_SPEED_ALPHA 0.4f
+#define LK_FOLLOW_SLOW 1.0f
+#define LK_FOLLOW_FAST 8.0f
+#define LK_FOLLOW_MIN 0.3f
+#define LK_SPEED_ALPHA 0.4f
 // The pad refreshes the thumb position only every 2nd-3rd report and repeats
 // it in between, so the thumb speed is measured per new position: its travel
 // over the time since the previous new position, in px per nominal report
 // (REPORT_US). Repeats are skipped; none for STILL_US means the thumb is
 // still. Taken per report, the repeats read as stops.
-#define ELIZ_REPORT_US 4000.0f
-#define ELIZ_STILL_US 16000u
+#define LK_REPORT_US 4000.0f
+#define LK_STILL_US 16000u
 
 // On lift the ball keeps the cursor's velocity, smoothed by LAUNCH_ALPHA so
 // the twist at the end of a swipe does not decide the glide, and the rest
 // of the gap is dropped. Touching a moving ball stops it.
-#define ELIZ_LAUNCH_ALPHA 0.35f
+#define LK_LAUNCH_ALPHA 0.35f
 
 // Free-spinning ball: exponential friction plus a small constant drag, so
 // slow spins end instead of crawling.
-#define ELIZ_GLIDE_DECAY 0.9835f
-#define ELIZ_GLIDE_DRAG 0.006f
-#define ELIZ_GLIDE_MAX 40.0f
+#define LK_GLIDE_DECAY 0.9835f
+#define LK_GLIDE_DRAG 0.006f
+#define LK_GLIDE_MAX 40.0f
 // A touch that is not driving the cursor (keyboard layer) brakes the ball
 // like a resting finger instead of stopping it dead.
-#define ELIZ_GHOST_DECAY 0.88f
+#define LK_GHOST_DECAY 0.88f
 
 // Pressure dead zone: the cursor ignores thumb travel within a radius that
 // is DEADZONE_PX at zero pressure (a feather touch, about to lift off),
@@ -72,9 +72,9 @@ bool g_elizTrace;
 // light lift-offs land where aimed. Beyond it the cursor is pulled along at
 // the edge, so drags still work. A radius never makes the cursor creep while
 // a click is held, which slowing the follow rate did.
-#define ELIZ_DZ_START 400
-#define ELIZ_DZ_FULL 2200
-#define ELIZ_DEADZONE_PX 10.0f
+#define LK_DZ_START 400
+#define LK_DZ_FULL 2200
+#define LK_DEADZONE_PX 10.0f
 // Lift dead zone: a thumb rolling off drops pressure fast and its contact
 // point wobbles. Each pad count per report of pressure drop opens LIFT_GAIN
 // px of dead zone (up to LIFT_MAX), shrinking by LIFT_DECAY per report, so
@@ -82,10 +82,10 @@ bool g_elizTrace;
 // updates more slowly the wider it is (half as fast at LIFT_HOLD_PX), so a
 // flick ending in a lift keeps its launch and a settled lift has none,
 // while pressure wobble barely matters.
-#define ELIZ_LIFT_GAIN 0.1f
-#define ELIZ_LIFT_MAX 40.0f
-#define ELIZ_LIFT_DECAY 0.8f
-#define ELIZ_LIFT_HOLD_PX 2.0f
+#define LK_LIFT_GAIN 0.1f
+#define LK_LIFT_MAX 40.0f
+#define LK_LIFT_DECAY 0.8f
+#define LK_LIFT_HOLD_PX 2.0f
 
 // Circular scrolling on the left pad: one turn is SCROLL_REV notches,
 // clockwise scrolls down. Starting a scroll needs the thumb to turn past a
@@ -94,9 +94,9 @@ bool g_elizTrace;
 // angle wildly, so a click there never starts one, while the outer ring
 // starts at once. Once started it follows the thumb anywhere but the very
 // center (SCROLL_R_HOLD) until the thumb lifts.
-#define ELIZ_SCROLL_REV 24.0f
-#define ELIZ_SCROLL_R_IN 0.2f
-#define ELIZ_SCROLL_R_OUT 0.65f
+#define LK_SCROLL_REV 24.0f
+#define LK_SCROLL_R_IN 0.2f
+#define LK_SCROLL_R_OUT 0.65f
 // Scroll momentum, like a free-spinning wheel, and built like the
 // trackball's: while the thumb turns the wheel its speed is kept up to date
 // (see wheelSpeed), and lifting the thumb at more than SCROLL_FLING notches
@@ -104,35 +104,35 @@ bool g_elizTrace;
 // until under SCROLL_STOP. A thumb back on the left pad catches it; slow
 // scrolling stops dead. A single reading more than SCROLL_OUTLIER times the
 // current speed (a junk position at the pad's edge) is capped.
-#define ELIZ_SCROLL_OUTLIER 3.0f
+#define LK_SCROLL_OUTLIER 3.0f
 // Wheel reports at most every WHEEL_GAP_MS: fast scrolling goes out as fewer,
 // larger steps instead of a report every 4 ms, which some apps stutter on.
 // Slow scrolling looks the same (it never needs more often than this).
-#define ELIZ_WHEEL_GAP_MS 16
+#define LK_WHEEL_GAP_MS 16
 // Once a scroll is under way the thumb may drift inward without stopping it;
 // only this close to the center, where the angle is noise, does it pause.
-#define ELIZ_SCROLL_R_HOLD 0.1f
-#define ELIZ_SCROLL_FLING 0.12f
-#define ELIZ_SCROLL_DECAY 0.996f
-#define ELIZ_SCROLL_STOP 0.008f
+#define LK_SCROLL_R_HOLD 0.1f
+#define LK_SCROLL_FLING 0.12f
+#define LK_SCROLL_DECAY 0.996f
+#define LK_SCROLL_STOP 0.008f
 // a scroll texture tick every SCROLL_TICK notches, fine to match the
 // high-resolution wheel
-#define ELIZ_SCROLL_TICK (2.0f / 3.0f)
+#define LK_SCROLL_TICK (2.0f / 3.0f)
 // High-resolution wheel: once Windows sets the HID Resolution Multiplier,
 // wheel reports count 1/120 notch.
-#define ELIZ_WHEEL_HIRES 120
+#define LK_WHEEL_HIRES 120
 // a per-report pad delta this large is a glitch, not a swipe
-#define ELIZ_MAX_DELTA 12000
+#define LK_MAX_DELTA 12000
 
 // Clicks use Triton OUTPUT 0x81 HAPTIC_PULSE [side][on_us][off_us][repeat]
 // for a sharp pulse; a 0x83 tone is dull and can swallow the next click.
 // Pulse side 0 is the RIGHT pad.
 static const uint8_t PULSE_SIDE[2] = { 0, 1 }; // PAD_R, PAD_L
-#define ELIZ_CLICK_ON_US 1500
-#define ELIZ_RELEASE_ON_US 700
+#define LK_CLICK_ON_US 1500
+#define LK_RELEASE_ON_US 700
 // 0x81 has no gain, so key clicks are made stronger by doubling the on-time
-#define ELIZ_KEY_ON_US 3000
-#define ELIZ_KEY_RELEASE_ON_US 1400
+#define LK_KEY_ON_US 3000
+#define LK_KEY_RELEASE_ON_US 1400
 
 // Ticks use Triton OUTPUT 0x83 HAPTIC_LFO_TONE
 // [side][gain_db s8][freq u16][dur u16][lfo_freq u16][lfo_depth]: its gain
@@ -140,52 +140,52 @@ static const uint8_t PULSE_SIDE[2] = { 0, 1 }; // PAD_R, PAD_L
 // LEFT pad, the reverse of 0x81. A 20-unit tick is clearly felt at -24 dB
 // and barely at -36 dB.
 static const uint8_t TONE_SIDE[2] = { 1, 0 }; // PAD_R, PAD_L
-#define ELIZ_TONE_HZ 200
-#define ELIZ_TICK_DB -24
-#define ELIZ_TICK_DUR 20
+#define LK_TONE_HZ 200
+#define LK_TICK_DB -24
+#define LK_TICK_DUR 20
 // entering / leaving the keyboard layer: a tone on both pads, dull and
 // round so it never reads as a click
-#define ELIZ_KBD_ON_DB -12
-#define ELIZ_KBD_OFF_DB -18
-#define ELIZ_KBD_DUR 30
+#define LK_KBD_ON_DB -12
+#define LK_KBD_OFF_DB -18
+#define LK_KBD_DUR 30
 // a tick per TICK_PX of cursor travel, so ticks slow down with the ball;
 // scrolling ticks once per wheel notch
-#define ELIZ_TICK_PX 24.0f
-#define ELIZ_TICK_MIN_MS 12u
+#define LK_TICK_PX 24.0f
+#define LK_TICK_MIN_MS 12u
 
 // Keyboard layer: each pad is a 3x3 grid of equal thirds. A zone is left
 // only once the thumb is ZONE_HYST past its edge, so a thumb resting on a
 // border does not flicker between zones. Side (N/E/S/W) zones have a texture
 // tick per TEX_COUNTS of travel; corners and the center have none.
-#define ELIZ_ZONE_EDGE 10923
-#define ELIZ_ZONE_HYST 1300
-#define ELIZ_TEX_COUNTS 2500
-#define ELIZ_TEX_DB -24
+#define LK_ZONE_EDGE 10923
+#define LK_ZONE_HYST 1300
+#define LK_TEX_COUNTS 2500
+#define LK_TEX_DB -24
 // a bump on every zone change, and on entering the band along the pad's
 // outer edge (the sensor can lose a thumb that is still on the pad)
-#define ELIZ_BUMP_DB -12
-#define ELIZ_BUMP_DUR 20
-#define ELIZ_PAD_EDGE 26000
+#define LK_BUMP_DB -12
+#define LK_BUMP_DUR 20
+#define LK_PAD_EDGE 26000
 // triggers act as keys in the desktop layers at a light pull (0..255)
-#define ELIZ_TRIG_ON 24
-#define ELIZ_TRIG_OFF 12
+#define LK_TRIG_ON 24
+#define LK_TRIG_OFF 12
 
 // sticks / triggers beyond these count as "in use" for layer latching
-#define ELIZ_STICK_REST 8000
-#define ELIZ_TRIG_REST 16
+#define LK_STICK_REST 8000
+#define LK_TRIG_REST 16
 // a bond silent this long has dropped; matches the Xbox mode's window
-#define ELIZ_CONN_MS 1200u
+#define LK_CONN_MS 1200u
 
 enum { LY_PAD, LY_MOUSE, LY_KBD, LY_N };
 
 // Physical buttons that carry a meaning. Touch bits (pads, sticks, grips)
 // select layers and are never bound.
-#define ELIZ_BTN_MASK                                                          \
+#define LK_BTN_MASK                                                            \
 	(TB_A | TB_B | TB_X | TB_Y | TB_QAM | TB_R3 | TB_VIEW | TB_R4 |        \
 	 TB_R5 | TB_RB | TB_DDN | TB_DRT | TB_DLF | TB_DUP | TB_MENU | TB_L3 | \
 	 TB_STEAM | TB_L4 | TB_L5 | TB_LB | TB_RPADC | TB_LPADC | TB_R2 |      \
 	 TB_L2)
-#define ELIZ_PADCLICK (TB_RPADC | TB_LPADC)
+#define LK_PADCLICK (TB_RPADC | TB_LPADC)
 
 // ---- USB: XInput interface 0 + one HID keyboard/mouse interface + CDC ----
 
@@ -194,7 +194,7 @@ enum { RID_KBD = 1, RID_MOUSE = 2, RID_WHEEL_MULT = 3, RID_MEDIA = 4 };
 // collection (Microsoft's "enhanced wheel" layout): logical 0..1 maps to a
 // physical multiplier of 1..120, so a host that sets it reads the wheel in
 // 1/120 notches. Input report: buttons, x, y, wheel (4 bytes).
-static const uint8_t ELIZ_HID_DESC[] = {
+static const uint8_t LK_HID_DESC[] = {
 	TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(RID_KBD)),
 	0x05,
 	0x01, // Usage Page (Generic Desktop)
@@ -259,7 +259,7 @@ static const uint8_t ELIZ_HID_DESC[] = {
 	0x35,
 	0x01,
 	0x45,
-	ELIZ_WHEEL_HIRES, //       Physical 1..120
+	LK_WHEEL_HIRES, //       Physical 1..120
 	0x75,
 	0x02,
 	0x95,
@@ -294,12 +294,12 @@ static const uint8_t ELIZ_HID_DESC[] = {
 	// media keys: one 16-bit consumer usage, 0 = none
 	TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_MEDIA)),
 };
-static Adafruit_USBD_HID g_elizHid;
+static Adafruit_USBD_HID g_lkHid;
 // set by the host through RID_WHEEL_MULT (usbd task)
 static volatile bool s_wheelHiRes;
 
-static uint16_t elizGetReport(uint8_t id, hid_report_type_t type, uint8_t *buf,
-			      uint16_t len)
+static uint16_t lkGetReport(uint8_t id, hid_report_type_t type, uint8_t *buf,
+			    uint16_t len)
 {
 	if (id != RID_WHEEL_MULT || type != HID_REPORT_TYPE_FEATURE || !len)
 		return 0;
@@ -307,8 +307,8 @@ static uint16_t elizGetReport(uint8_t id, hid_report_type_t type, uint8_t *buf,
 	return 1;
 }
 
-static void elizSetReport(uint8_t id, hid_report_type_t type,
-			  const uint8_t *buf, uint16_t len)
+static void lkSetReport(uint8_t id, hid_report_type_t type, const uint8_t *buf,
+			uint16_t len)
 {
 	if (id == RID_WHEEL_MULT && type == HID_REPORT_TYPE_FEATURE && len)
 		s_wheelHiRes = buf[0] & 0x03;
@@ -316,17 +316,17 @@ static void elizSetReport(uint8_t id, hid_report_type_t type,
 
 // Interface 0 of the genuine pad only: the vendor 0x21 descriptor and the two
 // interrupt endpoints. xi_open() checks these bytes, including EP 0x81/0x02.
-#define ELIZ_XI_LEN 40
+#define LK_XI_LEN 40
 
-class ElizXInputItf : public Adafruit_USBD_Interface {
+class LkXInputItf : public Adafruit_USBD_Interface {
     public:
 	uint16_t getInterfaceDescriptor(uint8_t itfnum, uint8_t *buf,
 					uint16_t bufsize) override
 	{
 		(void)itfnum;
 		if (!buf)
-			return ELIZ_XI_LEN;
-		if (bufsize < ELIZ_XI_LEN)
+			return LK_XI_LEN;
+		if (bufsize < LK_XI_LEN)
 			return 0;
 		uint8_t num = TinyUSBDevice.allocInterface(1);
 		uint8_t in = TinyUSBDevice.allocEndpoint(TUSB_DIR_IN);
@@ -335,15 +335,15 @@ class ElizXInputItf : public Adafruit_USBD_Interface {
 		uint8_t out = TinyUSBDevice.allocEndpoint(TUSB_DIR_OUT);
 		if (num != 0 || in != 0x81 || out != 0x02)
 			return 0;
-		memcpy(buf, XINPUT_CONFIG_BODY, ELIZ_XI_LEN);
-		return ELIZ_XI_LEN;
+		memcpy(buf, XINPUT_CONFIG_BODY, LK_XI_LEN);
+		return LK_XI_LEN;
 	}
 	bool begin()
 	{
 		return TinyUSBDevice.addInterface(*this);
 	}
 };
-static ElizXInputItf g_elizXi;
+static LkXInputItf g_lkXi;
 
 // MS OS 1.0: Windows' Xbox driver (xusb22.inf) binds either the genuine
 // 045E:028E device or the compatible ID USB\MS_COMP_XUSB10. Only the latter
@@ -351,9 +351,9 @@ static ElizXInputItf g_elizXi;
 // through the 0xEE string + extended compat ID descriptor. Windows caches the
 // "no MS OS descriptor" answer per VID/PID/bcdDevice, so bump bcdDevice if an
 // earlier build ever enumerated without it.
-#define ELIZ_MS_VENDOR 0x20
+#define LK_MS_VENDOR 0x20
 
-const uint16_t *elizStringDescriptor(uint8_t index)
+const uint16_t *lkStringDescriptor(uint8_t index)
 {
 	static const uint16_t msos[] = { (TUSB_DESC_STRING << 8) | 18,
 					 'M',
@@ -363,12 +363,12 @@ const uint16_t *elizStringDescriptor(uint8_t index)
 					 '1',
 					 '0',
 					 '0',
-					 ELIZ_MS_VENDOR };
+					 LK_MS_VENDOR };
 	return index == 0xEE ? msos : nullptr;
 }
 
-bool elizVendorControl(uint8_t rhport, uint8_t stage,
-		       const tusb_control_request_t *request)
+bool lkVendorControl(uint8_t rhport, uint8_t stage,
+		     const tusb_control_request_t *request)
 {
 	// extended compat ID descriptor, one function: interface 0 -> XUSB10
 	static const uint8_t compat[40] = {
@@ -378,7 +378,7 @@ bool elizVendorControl(uint8_t rhport, uint8_t stage,
 		0,  0, 0,   0,	 0,    0,    0,	   0, // sub-compat ID
 		0,  0, 0,   0,	 0,    0, // reserved
 	};
-	if (request->bRequest != ELIZ_MS_VENDOR || request->wIndex != 4 ||
+	if (request->bRequest != LK_MS_VENDOR || request->wIndex != 4 ||
 	    !(request->bmRequestType & 0x80))
 		return false;
 	if (stage != CONTROL_STAGE_SETUP)
@@ -454,7 +454,7 @@ static struct {
 } s_scroll;
 
 // serial console '~w': one line per report while scrolling or coasting
-bool g_elizScrollTrace;
+bool g_lkScrollTrace;
 
 // the virtual trackball behind the cursor (cursor px per report)
 static struct {
@@ -470,7 +470,7 @@ static struct {
 static bool bondAlive(int slot, unsigned long now)
 {
 	return slot >= 0 && slot < NSLOT && g_slot[slot].used &&
-	       g_connReplyMs[slot] && now - g_connReplyMs[slot] <= ELIZ_CONN_MS;
+	       g_connReplyMs[slot] && now - g_connReplyMs[slot] <= LK_CONN_MS;
 }
 
 // Both pads = keyboard, unless a pad click is held as a mouse button: then
@@ -479,7 +479,7 @@ static uint8_t layerFromTouch(uint32_t b)
 {
 	bool l = b & TB_LPADT, r = b & TB_RPADT;
 	if (l && r)
-		return s_own[LY_MOUSE] & ELIZ_PADCLICK ? LY_MOUSE : LY_KBD;
+		return s_own[LY_MOUSE] & LK_PADCLICK ? LY_MOUSE : LY_KBD;
 	return (l || r) ? LY_MOUSE : LY_PAD;
 }
 
@@ -520,7 +520,7 @@ static uint16_t gamepadButtons(uint32_t b)
 
 // ---- desktop keys (mouse and keyboard layers) ----
 
-struct ElizKey {
+struct LkKey {
 	uint32_t tb;
 	uint8_t mod;
 	uint8_t key;
@@ -530,7 +530,7 @@ struct ElizKey {
 #define ON_MOUSE (1u << LY_MOUSE)
 #define ON_KBD (1u << LY_KBD)
 #define ON_DESK (ON_MOUSE | ON_KBD)
-static const ElizKey DESK_KEYS[] = {
+static const LkKey DESK_KEYS[] = {
 	// back buttons: modifiers, reachable while both thumbs are on the pads.
 	// Shift over Ctrl on the left as on a keyboard, so both can be held
 	// while the right thumb drives the cursor; Alt mirrors Ctrl.
@@ -624,14 +624,14 @@ static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 // one axis of the grid: 0 = low third, 1 = middle, 2 = high
 static uint8_t zoneBand(int v, uint8_t cur)
 {
-	int lo = -ELIZ_ZONE_EDGE, hi = ELIZ_ZONE_EDGE;
+	int lo = -LK_ZONE_EDGE, hi = LK_ZONE_EDGE;
 	if (cur == 0) {
-		lo += ELIZ_ZONE_HYST;
+		lo += LK_ZONE_HYST;
 	} else if (cur == 2) {
-		hi -= ELIZ_ZONE_HYST;
+		hi -= LK_ZONE_HYST;
 	} else {
-		lo -= ELIZ_ZONE_HYST;
-		hi += ELIZ_ZONE_HYST;
+		lo -= LK_ZONE_HYST;
+		hi += LK_ZONE_HYST;
 	}
 	return v < lo ? 0 : v > hi ? 2 : 1;
 }
@@ -663,8 +663,8 @@ static int clampI8(float v)
 
 static bool stickActive(int16_t x, int16_t y)
 {
-	return x > ELIZ_STICK_REST || x < -ELIZ_STICK_REST ||
-	       y > ELIZ_STICK_REST || y < -ELIZ_STICK_REST;
+	return x > LK_STICK_REST || x < -LK_STICK_REST || y > LK_STICK_REST ||
+	       y < -LK_STICK_REST;
 }
 
 // Analog inputs follow the same latching rule as buttons: one in use when the
@@ -686,8 +686,8 @@ static void padDelta(Pad &p, bool touch, int16_t x, int16_t y, int *dx, int *dy)
 	*dx = *dy = 0;
 	if (touch && p.on) {
 		int ddx = x - p.x, ddy = y - p.y;
-		if (ddx <= ELIZ_MAX_DELTA && ddx >= -ELIZ_MAX_DELTA &&
-		    ddy <= ELIZ_MAX_DELTA && ddy >= -ELIZ_MAX_DELTA) {
+		if (ddx <= LK_MAX_DELTA && ddx >= -LK_MAX_DELTA &&
+		    ddy <= LK_MAX_DELTA && ddy >= -LK_MAX_DELTA) {
 			*dx = ddx;
 			*dy = ddy;
 		}
@@ -699,32 +699,31 @@ static void padDelta(Pad &p, bool touch, int16_t x, int16_t y, int *dx, int *dy)
 
 static float followRate(float speed)
 {
-	if (speed <= ELIZ_FOLLOW_SLOW)
+	if (speed <= LK_FOLLOW_SLOW)
 		return 1.0f;
-	if (speed >= ELIZ_FOLLOW_FAST)
-		return ELIZ_FOLLOW_MIN;
-	float t = (speed - ELIZ_FOLLOW_SLOW) /
-		  (ELIZ_FOLLOW_FAST - ELIZ_FOLLOW_SLOW);
+	if (speed >= LK_FOLLOW_FAST)
+		return LK_FOLLOW_MIN;
+	float t = (speed - LK_FOLLOW_SLOW) / (LK_FOLLOW_FAST - LK_FOLLOW_SLOW);
 	t = t * t * (3.0f - 2.0f * t);
-	return 1.0f + (ELIZ_FOLLOW_MIN - 1.0f) * t;
+	return 1.0f + (LK_FOLLOW_MIN - 1.0f) * t;
 }
 
-// see ELIZ_DEADZONE_PX: full at 0 and from DZ_FULL up, 0 at DZ_START
+// see LK_DEADZONE_PX: full at 0 and from DZ_FULL up, 0 at DZ_START
 static float deadZone(int16_t p, bool click)
 {
-	if (click || p >= ELIZ_DZ_FULL)
-		return ELIZ_DEADZONE_PX;
+	if (click || p >= LK_DZ_FULL)
+		return LK_DEADZONE_PX;
 	float t;
-	if (p < ELIZ_DZ_START) {
-		t = 1.0f - (float)(p > 0 ? p : 0) / (float)ELIZ_DZ_START;
-		return ELIZ_DEADZONE_PX * t * t;
+	if (p < LK_DZ_START) {
+		t = 1.0f - (float)(p > 0 ? p : 0) / (float)LK_DZ_START;
+		return LK_DEADZONE_PX * t * t;
 	}
-	t = (float)(p - ELIZ_DZ_START) / (float)(ELIZ_DZ_FULL - ELIZ_DZ_START);
-	return ELIZ_DEADZONE_PX * (1.0f - (1.0f - t) * (1.0f - t));
+	t = (float)(p - LK_DZ_START) / (float)(LK_DZ_FULL - LK_DZ_START);
+	return LK_DEADZONE_PX * (1.0f - (1.0f - t) * (1.0f - t));
 }
 
 // Update s_ball.speed from the thumb's travel this report (see
-// ELIZ_REPORT_US).
+// LK_REPORT_US).
 static void thumbSpeed(float tx, float ty)
 {
 	uint32_t now = micros();
@@ -732,14 +731,14 @@ static void thumbSpeed(float tx, float ty)
 	float v;
 	if (tx || ty) {
 		s_ball.sampleUs = now;
-		float reports = dt / ELIZ_REPORT_US;
+		float reports = dt / LK_REPORT_US;
 		v = sqrtf(tx * tx + ty * ty) / (reports > 1 ? reports : 1);
-	} else if (dt > ELIZ_STILL_US) {
+	} else if (dt > LK_STILL_US) {
 		v = 0;
 	} else {
 		return;
 	}
-	s_ball.speed += (v - s_ball.speed) * ELIZ_SPEED_ALPHA;
+	s_ball.speed += (v - s_ball.speed) * LK_SPEED_ALPHA;
 }
 
 // Advance the trackball one report and return the cursor motion in px.
@@ -760,10 +759,10 @@ static void ballStep(bool held, bool touch, float tx, float ty, int16_t p,
 		s_ball.held = true;
 		int drop = s_ball.prevP - p;
 		s_ball.prevP = p;
-		float lr = drop > 0 ? drop * ELIZ_LIFT_GAIN : 0.0f;
-		s_ball.liftR *= ELIZ_LIFT_DECAY;
+		float lr = drop > 0 ? drop * LK_LIFT_GAIN : 0.0f;
+		s_ball.liftR *= LK_LIFT_DECAY;
 		if (lr > s_ball.liftR)
-			s_ball.liftR = lr < ELIZ_LIFT_MAX ? lr : ELIZ_LIFT_MAX;
+			s_ball.liftR = lr < LK_LIFT_MAX ? lr : LK_LIFT_MAX;
 		s_ball.gapX += tx;
 		s_ball.gapY += ty;
 		thumbSpeed(tx, ty);
@@ -778,21 +777,20 @@ static void ballStep(bool held, bool touch, float tx, float ty, int16_t p,
 		*fy = s_ball.gapY * k;
 		s_ball.gapX -= *fx;
 		s_ball.gapY -= *fy;
-		float a = ELIZ_LAUNCH_ALPHA * ELIZ_LIFT_HOLD_PX /
-			  (ELIZ_LIFT_HOLD_PX + s_ball.liftR);
+		float a = LK_LAUNCH_ALPHA * LK_LIFT_HOLD_PX /
+			  (LK_LIFT_HOLD_PX + s_ball.liftR);
 		s_ball.vx += (*fx - s_ball.vx) * a;
 		s_ball.vy += (*fy - s_ball.vy) * a;
 		return;
 	}
 	s_ball.held = false;
 	if (touch) {
-		s_ball.vx *= ELIZ_GHOST_DECAY;
-		s_ball.vy *= ELIZ_GHOST_DECAY;
+		s_ball.vx *= LK_GHOST_DECAY;
+		s_ball.vy *= LK_GHOST_DECAY;
 	}
 	float sp = sqrtf(s_ball.vx * s_ball.vx + s_ball.vy * s_ball.vy);
-	float nsp = sp > ELIZ_GLIDE_MAX ?
-			    ELIZ_GLIDE_MAX :
-			    sp * ELIZ_GLIDE_DECAY - ELIZ_GLIDE_DRAG;
+	float nsp = sp > LK_GLIDE_MAX ? LK_GLIDE_MAX :
+					sp * LK_GLIDE_DECAY - LK_GLIDE_DRAG;
 	if (nsp <= 0) {
 		s_ball.vx = s_ball.vy = 0;
 	} else {
@@ -815,12 +813,12 @@ static void ballStep(bool held, bool touch, float tx, float ty, int16_t p,
 #define GUIDE_BEAT_MS 1000
 static uint32_t s_guideBeat;
 
-void elizGuideBeat()
+void lkGuideBeat()
 {
 	s_guideBeat = millis() | 1;
 }
 
-void elizGuideRelease()
+void lkGuideRelease()
 {
 	s_guideBeat = 0;
 }
@@ -847,7 +845,7 @@ static void sendKeyboard(uint8_t mod, const uint8_t keys[6])
 	memcpy(s_sentKeys, keys, 6);
 	uint8_t rep[8] = { mod,	    0,	     keys[0], keys[1],
 			   keys[2], keys[3], keys[4], keys[5] };
-	usbTxHid(&g_elizHid, RID_KBD, rep, sizeof rep);
+	usbTxHid(&g_lkHid, RID_KBD, rep, sizeof rep);
 }
 
 static void sendMouse(uint8_t btn, int dx, int dy, int wheel)
@@ -858,7 +856,7 @@ static void sendMouse(uint8_t btn, int dx, int dy, int wheel)
 		return;
 	s_sentMBtn = btn;
 	int8_t m[4] = { (int8_t)btn, (int8_t)dx, (int8_t)dy, (int8_t)wheel };
-	usbTxHid(&g_elizHid, RID_MOUSE, m, sizeof m);
+	usbTxHid(&g_lkHid, RID_MOUSE, m, sizeof m);
 }
 
 static void sendMedia(uint16_t usage)
@@ -868,7 +866,7 @@ static void sendMedia(uint16_t usage)
 	if (usage == s_sentMedia)
 		return;
 	s_sentMedia = usage;
-	usbTxHid(&g_elizHid, RID_MEDIA, &usage, sizeof usage);
+	usbTxHid(&g_lkHid, RID_MEDIA, &usage, sizeof usage);
 }
 
 static void haptic(uint8_t rid, const uint8_t *p, uint8_t n)
@@ -885,20 +883,20 @@ static void hapticPulse(uint8_t side, uint16_t us)
 
 static void hapticClick(uint8_t side, bool down)
 {
-	hapticPulse(side, down ? ELIZ_CLICK_ON_US : ELIZ_RELEASE_ON_US);
+	hapticPulse(side, down ? LK_CLICK_ON_US : LK_RELEASE_ON_US);
 }
 
 static void hapticKey(uint8_t side, bool down)
 {
-	hapticPulse(side, down ? ELIZ_KEY_ON_US : ELIZ_KEY_RELEASE_ON_US);
+	hapticPulse(side, down ? LK_KEY_ON_US : LK_KEY_RELEASE_ON_US);
 }
 
 static void hapticTone(uint8_t side, int8_t gainDb, uint16_t dur)
 {
 	uint8_t p[9] = { side,
 			 (uint8_t)gainDb,
-			 (uint8_t)ELIZ_TONE_HZ,
-			 (uint8_t)(ELIZ_TONE_HZ >> 8),
+			 (uint8_t)LK_TONE_HZ,
+			 (uint8_t)(LK_TONE_HZ >> 8),
 			 (uint8_t)dur,
 			 (uint8_t)(dur >> 8),
 			 0,
@@ -909,14 +907,14 @@ static void hapticTone(uint8_t side, int8_t gainDb, uint16_t dur)
 
 static void hapticTick(uint8_t side)
 {
-	hapticTone(side, ELIZ_TICK_DB, ELIZ_TICK_DUR);
+	hapticTone(side, LK_TICK_DB, LK_TICK_DUR);
 }
 
-// one faint tick per ELIZ_TICK_PX of cursor travel, touching or gliding
+// one faint tick per LK_TICK_PX of cursor travel, touching or gliding
 static void moveTick(float px, uint32_t now)
 {
 	s_tickDist += px;
-	if (s_tickDist < ELIZ_TICK_PX || now - s_tickMs < ELIZ_TICK_MIN_MS)
+	if (s_tickDist < LK_TICK_PX || now - s_tickMs < LK_TICK_MIN_MS)
 		return;
 	s_tickDist = 0;
 	s_tickMs = now;
@@ -950,13 +948,13 @@ static uint32_t deriveButtons(const PuckInput &in)
 {
 	static bool r, l, rt2, lt2;
 	bool rt = in.buttons & TB_RPADT, lt = in.buttons & TB_LPADT;
-	int16_t on = rt && lt ? ELIZ_KEY_CLICK_ON : ELIZ_CLICK_ON;
-	int16_t off = rt && lt ? ELIZ_KEY_CLICK_OFF : ELIZ_CLICK_OFF;
+	int16_t on = rt && lt ? LK_KEY_CLICK_ON : LK_CLICK_ON;
+	int16_t off = rt && lt ? LK_KEY_CLICK_OFF : LK_CLICK_OFF;
 	r = rt && (r ? in.rpz > off : in.rpz >= on);
 	l = lt && (l ? in.lpz > off : in.lpz >= on);
-	rt2 = rt2 ? in.rt > ELIZ_TRIG_OFF : in.rt >= ELIZ_TRIG_ON;
-	lt2 = lt2 ? in.lt > ELIZ_TRIG_OFF : in.lt >= ELIZ_TRIG_ON;
-	uint32_t b = in.buttons & ~(ELIZ_PADCLICK | TB_R2 | TB_L2);
+	rt2 = rt2 ? in.rt > LK_TRIG_OFF : in.rt >= LK_TRIG_ON;
+	lt2 = lt2 ? in.lt > LK_TRIG_OFF : in.lt >= LK_TRIG_ON;
+	uint32_t b = in.buttons & ~(LK_PADCLICK | TB_R2 | TB_L2);
 	if (r)
 		b |= TB_RPADC;
 	if (l)
@@ -980,14 +978,14 @@ static void layerStep(uint8_t touchLayer, uint32_t now)
 		s_candMs = now;
 		return;
 	}
-	if (now - s_candMs < ELIZ_SWITCH_MS)
+	if (now - s_candMs < LK_SWITCH_MS)
 		return;
 	bool on = touchLayer == LY_KBD, off = s_layer == LY_KBD;
 	s_layer = touchLayer;
 	if (on || off) {
-		int8_t db = on ? ELIZ_KBD_ON_DB : ELIZ_KBD_OFF_DB;
+		int8_t db = on ? LK_KBD_ON_DB : LK_KBD_OFF_DB;
 		for (int i = 0; i < 2; i++)
-			hapticTone(TONE_SIDE[i], db, ELIZ_KBD_DUR);
+			hapticTone(TONE_SIDE[i], db, LK_KBD_DUR);
 	}
 }
 
@@ -1001,8 +999,8 @@ static void ownButtons(uint32_t b, uint8_t touchLayer)
 	s_prevBtn = b;
 	for (int l = 0; l < LY_N; l++)
 		s_own[l] &= ~released;
-	s_own[s_layer] |= pressed & ~ELIZ_PADCLICK;
-	s_own[touchLayer] |= pressed & ELIZ_PADCLICK;
+	s_own[s_layer] |= pressed & ~LK_PADCLICK;
+	s_own[touchLayer] |= pressed & LK_PADCLICK;
 }
 
 static void gamepadStep(const PuckInput &in)
@@ -1012,8 +1010,8 @@ static void gamepadStep(const PuckInput &in)
 		s_gp.btn |= XB_GUIDE;
 	else
 		s_guideTapUntil = 0;
-	bool lt = analogPasses(AN_LT, in.lt > ELIZ_TRIG_REST);
-	bool rt = analogPasses(AN_RT, in.rt > ELIZ_TRIG_REST);
+	bool lt = analogPasses(AN_LT, in.lt > LK_TRIG_REST);
+	bool rt = analogPasses(AN_RT, in.rt > LK_TRIG_REST);
 	bool ls = analogPasses(AN_LSTICK, stickActive(in.lx, in.ly));
 	bool rs = analogPasses(AN_RSTICK, stickActive(in.rx, in.ry));
 	s_gp.lt = lt ? in.lt : 0;
@@ -1030,7 +1028,7 @@ static void typeKey(int i, uint8_t key, uint8_t z)
 	s_pad[i].key = key;
 	s_pad[i].keyZone = z;
 	hapticKey(PULSE_SIDE[i], true);
-	// "KK pad zone" for the trainer's press flash; dropped, never waited
+	// "KK pad zone" for the Guide's press flash; dropped, never waited
 	// for, when the CDC buffer is full
 	if (Serial && Serial.availableForWrite() >= 8)
 		Serial.printf("KK %d %u\n", i, z);
@@ -1106,22 +1104,22 @@ static void zoneHaptics(const PuckInput &in, const uint8_t zone[2],
 		Pad &pd = s_pad[i];
 		bool kbd = s_layer == LY_KBD && pd.on;
 		int reach = max(abs(px[i]), abs(py[i]));
-		bool edge = pd.edge ? reach > ELIZ_PAD_EDGE - ELIZ_ZONE_HYST :
-				      reach > ELIZ_PAD_EDGE;
+		bool edge = pd.edge ? reach > LK_PAD_EDGE - LK_ZONE_HYST :
+				      reach > LK_PAD_EDGE;
 		bool bump = kbd && wasOn[i] &&
 			    (zone[i] != pd.zone || (edge && !pd.edge));
 		pd.zone = zone[i];
 		pd.edge = pd.on && edge;
 		if (bump)
-			hapticTone(TONE_SIDE[i], ELIZ_BUMP_DB, ELIZ_BUMP_DUR);
+			hapticTone(TONE_SIDE[i], LK_BUMP_DB, LK_BUMP_DUR);
 		if (!kbd || !zoneSide(zone[i])) {
 			pd.tex = 0;
 			continue;
 		}
 		pd.tex += travel[i];
-		if (pd.tex >= ELIZ_TEX_COUNTS) {
+		if (pd.tex >= LK_TEX_COUNTS) {
 			pd.tex = 0;
-			hapticTone(TONE_SIDE[i], ELIZ_TEX_DB, ELIZ_TICK_DUR);
+			hapticTone(TONE_SIDE[i], LK_TEX_DB, LK_TICK_DUR);
 		}
 	}
 }
@@ -1181,7 +1179,7 @@ static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 		      cur[5], cur[6], cur[7], cur[8], cur[9]);
 }
 
-void elizDumpKeymap()
+void lkDumpKeymap()
 {
 	for (int pad = 0; pad < 2; pad++) {
 		for (int z = 0; z < Z_COUNT; z++) {
@@ -1192,7 +1190,7 @@ void elizDumpKeymap()
 		}
 	}
 	Serial.printf("KM end\n");
-	// a freshly started trainer also needs the current state
+	// a freshly started Guide also needs the current state
 	memset(s_ksLast, 0xFF, sizeof s_ksLast);
 }
 
@@ -1250,7 +1248,7 @@ static float wrapAngle(float d)
 }
 
 // Wheel travel this report, in notches, from the left pad's angle (see
-// ELIZ_SCROLL_REV).
+// LK_SCROLL_REV).
 static float circularScroll(bool touch, int16_t x, int16_t y)
 {
 	float r = sqrtf((float)x * x + (float)y * y) / 32767.0f;
@@ -1263,7 +1261,7 @@ static float circularScroll(bool touch, int16_t x, int16_t y)
 	}
 	float d = wrapAngle(a - s_scroll.anchor);
 	if (s_scroll.engaged) {
-		if (r < ELIZ_SCROLL_R_HOLD) {
+		if (r < LK_SCROLL_R_HOLD) {
 			s_scroll.anchor = a;
 			return 0;
 		}
@@ -1273,8 +1271,8 @@ static float circularScroll(bool touch, int16_t x, int16_t y)
 		// wheel follows the thumb, so the scroll starts where it enters
 		// the outer ring instead of replaying the way out from the
 		// center.
-		float t = (r - ELIZ_SCROLL_R_IN) /
-			  (ELIZ_SCROLL_R_OUT - ELIZ_SCROLL_R_IN);
+		float t = (r - LK_SCROLL_R_IN) /
+			  (LK_SCROLL_R_OUT - LK_SCROLL_R_IN);
 		t = t < 0 ? 0 : t > 1 ? 1 : t;
 		float dz = (float)M_PI * (1.0f - t) * (1.0f - t);
 		if (d > dz) {
@@ -1290,11 +1288,11 @@ static float circularScroll(bool touch, int16_t x, int16_t y)
 	// the anchor stays within one turn, so the next difference wraps right
 	s_scroll.anchor = wrapAngle(s_scroll.anchor + d);
 	// counter-clockwise (angle up) scrolls up, like turning a wheel away
-	return d * ELIZ_SCROLL_REV / (2.0f * (float)M_PI);
+	return d * LK_SCROLL_REV / (2.0f * (float)M_PI);
 }
 
 // Wheel report value this report: circular scroll with a texture tick every
-// ELIZ_SCROLL_TICK notches, in 1/120 notches once the host enabled them.
+// LK_SCROLL_TICK notches, in 1/120 notches once the host enabled them.
 // The wheel's speed while the thumb turns it, the way thumbSpeed and
 // ballStep track the cursor's: measured per new pad position over the real
 // time since the previous one (the pad repeats positions; none for STILL_US
@@ -1306,26 +1304,26 @@ static void wheelSpeed(float n, int16_t p)
 	uint32_t now = micros();
 	int drop = s_scroll.prevP - p;
 	s_scroll.prevP = p;
-	float lr = drop > 0 ? drop * ELIZ_LIFT_GAIN : 0.0f;
-	s_scroll.liftR *= ELIZ_LIFT_DECAY;
+	float lr = drop > 0 ? drop * LK_LIFT_GAIN : 0.0f;
+	s_scroll.liftR *= LK_LIFT_DECAY;
 	if (lr > s_scroll.liftR)
-		s_scroll.liftR = lr < ELIZ_LIFT_MAX ? lr : ELIZ_LIFT_MAX;
+		s_scroll.liftR = lr < LK_LIFT_MAX ? lr : LK_LIFT_MAX;
 	uint32_t dt = now - s_scroll.sampleUs;
 	float v;
 	if (n != 0) {
 		s_scroll.sampleUs = now;
-		float reports = dt / ELIZ_REPORT_US;
+		float reports = dt / LK_REPORT_US;
 		v = n / (reports > 1 ? reports : 1);
-		float cap = fabsf(s_scroll.vel) * ELIZ_SCROLL_OUTLIER +
-			    ELIZ_SCROLL_FLING;
+		float cap = fabsf(s_scroll.vel) * LK_SCROLL_OUTLIER +
+			    LK_SCROLL_FLING;
 		v = v > cap ? cap : v < -cap ? -cap : v;
-	} else if (dt > ELIZ_STILL_US) {
+	} else if (dt > LK_STILL_US) {
 		v = 0;
 	} else {
 		return;
 	}
-	float a = ELIZ_LAUNCH_ALPHA * ELIZ_LIFT_HOLD_PX /
-		  (ELIZ_LIFT_HOLD_PX + s_scroll.liftR);
+	float a = LK_LAUNCH_ALPHA * LK_LIFT_HOLD_PX /
+		  (LK_LIFT_HOLD_PX + s_scroll.liftR);
 	s_scroll.vel += (v - s_scroll.vel) * a;
 }
 
@@ -1342,15 +1340,15 @@ static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y, int16_t p,
 		wheelSpeed(n, p);
 		s_scroll.glide = 0;
 	} else {
-		bool fling = fabsf(s_scroll.vel) >= ELIZ_SCROLL_FLING;
+		bool fling = fabsf(s_scroll.vel) >= LK_SCROLL_FLING;
 		if (s_scroll.wasActive && fling)
 			s_scroll.glide = s_scroll.vel;
-		if (lTouch || fabsf(s_scroll.glide) < ELIZ_SCROLL_STOP)
+		if (lTouch || fabsf(s_scroll.glide) < LK_SCROLL_STOP)
 			s_scroll.glide = 0;
 		n = s_scroll.glide;
-		s_scroll.glide *= ELIZ_SCROLL_DECAY;
+		s_scroll.glide *= LK_SCROLL_DECAY;
 	}
-	if (g_elizScrollTrace && (active || s_scroll.wasActive || n != 0) &&
+	if (g_lkScrollTrace && (active || s_scroll.wasActive || n != 0) &&
 	    Serial.availableForWrite() > 48)
 		Serial.printf("W %lu %d %.2f %.3f %.3f %d\n",
 			      (unsigned long)now, active ? 1 : 0,
@@ -1363,22 +1361,22 @@ static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y, int16_t p,
 	s_scroll.notches += n;
 	s_scroll.tick += fabsf(n);
 	// texture ticks only under the thumb, not while gliding
-	if (active && s_scroll.tick >= ELIZ_SCROLL_TICK) {
-		s_scroll.tick -= ELIZ_SCROLL_TICK;
+	if (active && s_scroll.tick >= LK_SCROLL_TICK) {
+		s_scroll.tick -= LK_SCROLL_TICK;
 		hapticTick(TONE_SIDE[PAD_L]);
 	}
-	float per = s_wheelHiRes ? ELIZ_WHEEL_HIRES : 1;
+	float per = s_wheelHiRes ? LK_WHEEL_HIRES : 1;
 	float pending = s_scroll.notches * per;
 	// a stopped wheel sends what is left at once, and a step too big for
 	// one report goes early, so batching never makes the wheel lag
 	bool due = stopped || fabsf(pending) >= 127 ||
-		   now - s_scroll.sentMs >= ELIZ_WHEEL_GAP_MS;
+		   now - s_scroll.sentMs >= LK_WHEEL_GAP_MS;
 	if (!due)
 		return 0;
 	int wheel = clampI8(pending);
 	if (wheel)
 		s_scroll.sentMs = now;
-	if (g_elizScrollTrace && wheel && Serial.availableForWrite() > 24)
+	if (g_lkScrollTrace && wheel && Serial.availableForWrite() > 24)
 		Serial.printf("WS %d hires=%d\n", wheel, s_wheelHiRes ? 1 : 0);
 	s_scroll.notches -= wheel / per;
 	if (stopped && !wheel)
@@ -1395,11 +1393,11 @@ static void mouseStep(const PuckInput &in, bool deskOk, int rdx, int rdy,
 	bool drag = deskOk && rTouch && lTouch;
 	float k = 64.0f / (float)g_mDiv;
 	int dx0 = rdx + (drag ? ldx : 0), dy0 = rdy + (drag ? ldy : 0);
-	float tx = dx0 * k / ELIZ_PX_DIV, ty = -dy0 * k / ELIZ_PX_DIV;
+	float tx = dx0 * k / LK_PX_DIV, ty = -dy0 * k / LK_PX_DIV;
 	float fx, fy;
 	ballStep(deskOk && rTouch, rTouch, tx, ty, in.rpz, s_pad[PAD_R].click,
 		 &fx, &fy);
-	if (g_elizTrace && Serial.availableForWrite() > 60)
+	if (g_lkTrace && Serial.availableForWrite() > 60)
 		Serial.printf("R %lu %d %d %.1f %.1f %.1f %.1f %.1f %.1f %.1f "
 			      "%.1f\n",
 			      (unsigned long)now, rTouch ? 1 : 0, in.rpz, tx,
@@ -1432,7 +1430,7 @@ static void mouseStep(const PuckInput &in, bool deskOk, int rdx, int rdy,
 static void bumpBoth()
 {
 	for (int i = 0; i < 2; i++)
-		hapticTone(TONE_SIDE[i], ELIZ_BUMP_DB, ELIZ_BUMP_DUR);
+		hapticTone(TONE_SIDE[i], LK_BUMP_DB, LK_BUMP_DUR);
 }
 
 // The Guide button (the controller's Steam button) reaches LizardKing before
@@ -1487,7 +1485,7 @@ static void guideMedium(bool gamepad)
 		Serial.printf("KG\n");
 		confirm(!up);
 	} else if (gamepad) {
-		confirm(elizDriveToggle());
+		confirm(guideDriveToggle());
 	}
 }
 
@@ -1506,7 +1504,7 @@ static uint32_t guideButton(uint32_t raw, uint32_t now)
 {
 	static bool down, spent, gamepad;
 	static uint32_t since, prev, swallow;
-	uint32_t fresh = raw & ~prev & ELIZ_BTN_MASK & ~TB_STEAM;
+	uint32_t fresh = raw & ~prev & LK_BTN_MASK & ~TB_STEAM;
 	prev = raw;
 	if (raw & TB_STEAM) {
 		if (!down) {
@@ -1533,7 +1531,7 @@ static uint32_t guideButton(uint32_t raw, uint32_t now)
 	return raw & ~TB_STEAM & ~swallow;
 }
 
-static void elizProcess(const PuckInput &in)
+static void lkProcess(const PuckInput &in)
 {
 	uint32_t now = millis();
 	uint32_t derived = deriveButtons(in);
@@ -1541,7 +1539,7 @@ static void elizProcess(const PuckInput &in)
 	uint32_t raw = guideButton(derived, now);
 	uint8_t touchLayer = layerFromTouch(in.buttons);
 	layerStep(touchLayer, now);
-	ownButtons(raw & ELIZ_BTN_MASK, touchLayer);
+	ownButtons(raw & LK_BTN_MASK, touchLayer);
 	gamepadStep(in);
 
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
@@ -1566,7 +1564,7 @@ static void elizProcess(const PuckInput &in)
 
 // ---- controller ----
 
-void EnhancedLizardController::usbIdentity()
+void LizardKingController::usbIdentity()
 {
 	// pid.codes test PID: fine for private use; a published build needs
 	// its own allocation (https://pid.codes)
@@ -1584,26 +1582,26 @@ void EnhancedLizardController::usbIdentity()
 	device->bDeviceProtocol = MISC_PROTOCOL_IAD;
 }
 
-void EnhancedLizardController::begin()
+void LizardKingController::begin()
 {
 	beginShared();
 	usbIdentity();
-	g_elizXi.begin();
-	g_elizHid.setReportDescriptor(ELIZ_HID_DESC, sizeof ELIZ_HID_DESC);
-	g_elizHid.setReportCallback(elizGetReport, elizSetReport);
-	g_elizHid.setStringDescriptor("LizardKing Keyboard/Mouse");
-	g_elizHid.setPollInterval(1);
-	g_elizHid.begin();
+	g_lkXi.begin();
+	g_lkHid.setReportDescriptor(LK_HID_DESC, sizeof LK_HID_DESC);
+	g_lkHid.setReportCallback(lkGetReport, lkSetReport);
+	g_lkHid.setStringDescriptor("LizardKing Keyboard/Mouse");
+	g_lkHid.setPollInterval(1);
+	g_lkHid.begin();
 	// standard CDC: the Guide's link and the serial console
 	Serial.setStringDescriptor("LizardKing Serial");
 	TinyUSBDevice.addInterface(Serial);
 	// last, so the CDC function keeps its interface number (and Windows
 	// its COM port) whether or not the drive is built in
-	elizDriveBegin();
+	guideDriveBegin();
 }
 
-void EnhancedLizardController::onReport45(int slot, const uint8_t *rep,
-					  bool fresh, uint8_t bodyTlen)
+void LizardKingController::onReport45(int slot, const uint8_t *rep, bool fresh,
+				      uint8_t bodyTlen)
 {
 	unsigned long now = millis();
 	if (slot >= 0 && slot < NSLOT) {
@@ -1614,13 +1612,13 @@ void EnhancedLizardController::onReport45(int slot, const uint8_t *rep,
 			s_slot = slot;
 		}
 		if (slot == s_slot)
-			elizProcess(g_in[slot]);
+			lkProcess(g_in[slot]);
 	}
 	XboxController::onReport45(slot, rep, fresh, bodyTlen);
 }
 
-void EnhancedLizardController::emit(uint8_t slot, uint32_t generation,
-				    const uint8_t *rep)
+void LizardKingController::emit(uint8_t slot, uint32_t generation,
+				const uint8_t *rep)
 {
 	(void)rep;
 	if ((int)slot != s_slot || guideHolds()) {
@@ -1651,10 +1649,10 @@ static void streamStatus(uint32_t now)
 		      s_keymapOn, s_keymapLow);
 }
 
-void EnhancedLizardController::task()
+void LizardKingController::task()
 {
 	XboxController::task();
-	elizDriveTask();
+	guideDriveTask();
 	streamStatus(millis());
 	if (s_bumpAgainAt && (int32_t)(millis() - s_bumpAgainAt) >= 0) {
 		s_bumpAgainAt = 0;

@@ -8,7 +8,7 @@
 #include "config.h"
 #include "puck_hid.h" // g_cmdCapture (feature-command capture toggle)
 #include "fault_diag.h"
-#include "mode_eliz.h" // g_elizTrace
+#include "mode_lizardking.h" // g_lkTrace
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <stdlib.h>
@@ -43,22 +43,22 @@ static void tildeCommand(const char *a)
 	};
 	switch (kind) {
 	case 'r':
-		g_elizTrace = !g_elizTrace;
-		Serial.printf("# ball trace %s\n", g_elizTrace ? "ON" : "off");
+		g_lkTrace = !g_lkTrace;
+		Serial.printf("# ball trace %s\n", g_lkTrace ? "ON" : "off");
 		return;
 	case 'm':
-		elizDumpKeymap();
+		lkDumpKeymap();
 		return;
 	case 'w':
-		g_elizScrollTrace = !g_elizScrollTrace;
+		g_lkScrollTrace = !g_lkScrollTrace;
 		Serial.printf("# scroll trace %s\n",
-			      g_elizScrollTrace ? "ON" : "off");
+			      g_lkScrollTrace ? "ON" : "off");
 		return;
 	case 'g':
-		elizGuideBeat();
+		lkGuideBeat();
 		return;
 	case 'h':
-		elizGuideRelease();
+		lkGuideRelease();
 		return;
 	case 'b':
 		// make flash: the UF2 bootloader's drive takes the install file

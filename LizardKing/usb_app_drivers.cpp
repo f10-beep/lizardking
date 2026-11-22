@@ -21,8 +21,8 @@ Adafruit_USBD_WebUSB usb_web;
 // land on one global TinyUSB callback, which the Adafruit core defines for
 // WebUSB. Linker wrapping (-Wl,--wrap in the Makefile) lets each mode answer
 // its own requests and pass the rest on.
-bool elizVendorControl(uint8_t rhport, uint8_t stage,
-		       const tusb_control_request_t *request);
+bool lkVendorControl(uint8_t rhport, uint8_t stage,
+		     const tusb_control_request_t *request);
 extern "C" bool
 __real_tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
 				  const tusb_control_request_t *request);
@@ -30,19 +30,20 @@ extern "C" bool
 __wrap_tud_vendor_control_xfer_cb(uint8_t rhport, uint8_t stage,
 				  const tusb_control_request_t *request)
 {
-	if (g_usbMode == MODE_ELIZ)
-		return elizVendorControl(rhport, stage, request);
+	if (g_usbMode == MODE_LIZARDKING)
+		return lkVendorControl(rhport, stage, request);
 	return __real_tud_vendor_control_xfer_cb(rhport, stage, request);
 }
 
 // LizardKing answers the MS OS 1.0 string (0xEE) that binds the Xbox driver.
-const uint16_t *elizStringDescriptor(uint8_t index);
+const uint16_t *lkStringDescriptor(uint8_t index);
 extern "C" const uint16_t *__real_tud_descriptor_string_cb(uint8_t index,
 							   uint16_t langid);
 extern "C" const uint16_t *__wrap_tud_descriptor_string_cb(uint8_t index,
 							   uint16_t langid)
 {
-	const uint16_t *d =
-		g_usbMode == MODE_ELIZ ? elizStringDescriptor(index) : nullptr;
+	const uint16_t *d = g_usbMode == MODE_LIZARDKING ?
+				    lkStringDescriptor(index) :
+				    nullptr;
 	return d ? d : __real_tud_descriptor_string_cb(index, langid);
 }

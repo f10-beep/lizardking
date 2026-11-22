@@ -22,23 +22,24 @@ rings are single-producer (usbd) / single-consumer (loop).
 ## Pipeline
 
 ```
-radio.cpp        nRF52 RADIO: channels, addresses, raw TX/RX
-rf_link.cpp      the controller protocol: discovery, bonding, the poll loop,
-                 decoding input report 0x45 into g_in[slot] (triton.h),
-                 relaying host commands
+radio.cpp            nRF52 RADIO: channels, addresses, raw TX/RX
+rf_link.cpp          the controller protocol: discovery, bonding, the poll
+                     loop, decoding input report 0x45 into g_in[slot]
+                     (triton.h), relaying host commands
    │
    ▼  g_active->onReport45(slot, …)          (controllers.h)
-mode_eliz.cpp    LizardKing: layers (gamepad / mouse / keyboard by pad
-                 touch), trackball cursor, scroll, keyboard zones, the Guide
-                 button and its chords, the Guide's serial protocol
+mode_lizardking.cpp  LizardKing: layers (gamepad / mouse / keyboard by pad
+                     touch), trackball cursor, scroll, keyboard zones, the
+                     Guide button and its chords, the Guide's serial protocol
    ├─ mode_xinput.cpp   XInput class driver, bond selection, rumble
-   ├─ HID keyboard + mouse + consumer interface (in mode_eliz.cpp)
-   └─ eliz_drive.cpp    the read-only guide drive (synthesized FAT12)
-puck_hid.cpp     Steam mode, for pairing: the Valve puck presentation
+   ├─ HID keyboard + mouse + consumer interface (in mode_lizardking.cpp)
+   └─ guide_drive.cpp   the read-only guide drive (synthesized FAT12)
+puck_hid.cpp         Steam mode, for pairing: the Valve puck presentation
    └─ mode_lizard.cpp / lizard_map.cpp   its keyboard/mouse fallback
-usb_tx.cpp       every device→host report drains from the loop, never off it
-usb_app_drivers  custom class drivers and the vendor / string descriptor
-                 hooks (linker-wrapped, see the Makefile)
+usb_tx.cpp           every device→host report drains from the loop, never
+                     off it
+usb_app_drivers      custom class drivers and the vendor / string descriptor
+                     hooks (linker-wrapped, see the Makefile)
 ```
 
 ## Around it

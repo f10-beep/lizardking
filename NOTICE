@@ -20,6 +20,6 @@ authentication and dynamic USB mounting removed):
 
 Written for LizardKing:
 
-  LizardKing/mode_eliz.*, LizardKing/eliz_drive.*, guide/, tools/layout/,
+  LizardKing/mode_lizardking.*, LizardKing/guide_drive.*, guide/, tools/layout/,
   tools/check-trailing-comments.py, docs/DESIGN.md,
   docs/KEYBOARD_LAYOUT.md

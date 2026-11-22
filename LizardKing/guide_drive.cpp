@@ -1,4 +1,4 @@
-// eliz_drive.cpp -- LizardKing's read-only guide drive. See eliz_drive.h.
+// guide_drive.cpp -- LizardKing's read-only guide drive. See guide_drive.h.
 //
 // The volume is synthesized on the fly (no flash file system): a FAT12 boot
 // sector, FAT and root directory computed from two files that live in the
@@ -7,16 +7,16 @@
 #include <Arduino.h>
 #include <string.h>
 #include "Adafruit_TinyUSB.h"
-#include "eliz_drive.h"
+#include "guide_drive.h"
 
 #if __has_include("guide_exe.h")
 #include "guide_exe.h"
-#define ELIZ_HAVE_TRAINER 1
+#define LK_HAVE_GUIDE_DRIVE 1
 #else
-#define ELIZ_HAVE_TRAINER 0
+#define LK_HAVE_GUIDE_DRIVE 0
 #endif
 
-#if ELIZ_HAVE_TRAINER
+#if LK_HAVE_GUIDE_DRIVE
 
 static const char README[] =
 	"LizardKing Guide\r\n"
@@ -252,7 +252,7 @@ static bool ready()
 	return s_shown;
 }
 
-void elizDriveBegin()
+void guideDriveBegin()
 {
 	buildRoot();
 	s_msc.setID("LizPuck", "Guide drive", "1.0");
@@ -263,7 +263,7 @@ void elizDriveBegin()
 	s_msc.begin();
 }
 
-void elizDriveTask()
+void guideDriveTask()
 {
 	bool mounted = TinyUSBDevice.mounted();
 	// its only job is starting the Guide, so the Guide connecting hides it
@@ -272,7 +272,7 @@ void elizDriveTask()
 	s_wasMounted = mounted;
 }
 
-bool elizDriveToggle()
+bool guideDriveToggle()
 {
 	s_shown = !s_shown;
 	return s_shown;
@@ -280,15 +280,15 @@ bool elizDriveToggle()
 
 #else
 
-void elizDriveBegin()
+void guideDriveBegin()
 {
 }
 
-void elizDriveTask()
+void guideDriveTask()
 {
 }
 
-bool elizDriveToggle()
+bool guideDriveToggle()
 {
 	return false;
 }
