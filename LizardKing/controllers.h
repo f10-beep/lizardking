@@ -55,4 +55,3 @@ IController *controllerFor(uint8_t mode);
 
 // The active controller for this boot (set in setup()). rf_link/loop dispatch through it.
 extern IController *g_active;
-

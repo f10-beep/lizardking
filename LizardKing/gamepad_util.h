@@ -21,4 +21,3 @@ struct PsImuFrame {
 uint16_t padNormU16(int16_t v, uint16_t maxv);
 void touchPackPoint(uint8_t *base, int finger, bool touch, uint16_t x,
 		    uint16_t y);
-

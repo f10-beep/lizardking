@@ -12,9 +12,10 @@ What your thumbs touch picks the layer:
 | one | mouse (a virtual trackball, with scrolling) |
 | both | keyboard |
 
-It is opinionated on purpose: one layout, no settings, no profiles. It
-behaves the same in games, on the desktop, at the Windows login screen and in
-admin prompts.
+It is opinionated on purpose: it arrives with one confident design, one
+layout and one way to do each thing, and never hands you a setting to decide
+what we should have decided ourselves. It behaves the same in games, on the
+desktop, at the Windows login screen and in admin prompts.
 
 - Design and behaviour: [docs/DESIGN.md](docs/DESIGN.md)
 - Keyboard layout: [docs/KEYBOARD_LAYOUT.md](docs/KEYBOARD_LAYOUT.md)

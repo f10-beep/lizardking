@@ -7,17 +7,30 @@ a Steam Controller 2, plus the LizardKing Guide (a Windows companion app). It
 turns the controller into a complete PC input device: gamepad, mouse and
 keyboard in fixed layers chosen by what your thumbs touch.
 
-It is deliberately **opinionated**. The product makes the decisions at design
-time so the user never has to:
+### Opinionated by design
 
-- **No configuration.** No settings pages, no profiles, no web configurator,
-  no tuning gestures. If a behaviour needs a knob, the design isn't finished.
-- **One way to do each thing.** No emulation modes, no alternate layouts.
-- **A toggle is not configuration**, but it must stay strictly binary and its
-  state must be visible (haptic feedback and the Guide). The gyro on/off
-  gesture is the only one; adding another needs a very good reason.
+LizardKing meets the user with a confident, finished design. **We never use
+configuration to hand a design decision to the user.** If we can't decide how
+something should behave, the design isn't done, and an option would only move
+our unfinished work onto them.
 
-When a change would add an option, find the right default instead.
+The rule is about what the user is asked, not about locking the product down:
+
+- **Decided, not offered.** One layout, one way to do each thing: no
+  emulation modes, no profiles, no settings screens. When a change seems to
+  need an option, find the right default instead.
+- **Switches can be part of the design.** A few strictly binary switches
+  belong to the product because the right answer depends on the moment, not
+  on the person: the Guide, the key map and where it sits, gyro aiming. Each
+  is a Guide chord, confirmed on the pads and shown in the Guide. Adding
+  another needs a strong case.
+- **Tuning is our tool, not theirs.** Constants, persisted state
+  (`cfg.bin`) and console commands exist so we can find the right values
+  and hold them. None of it is presented to the user as a choice, and every
+  install starts from the shipped defaults.
+
+The test for any change: does it ask the user to decide something we should
+have decided? If so, decide it.
 
 ## How we work: working, then simple
 
@@ -108,7 +121,9 @@ make check    # format-check + trailing-comment lint
 make format   # apply kernel style
 ```
 
-`make check` needs clang-format 18 on the PATH; CI runs it on every push.
+`make check` needs clang-format 18: on the PATH, or from PyPI
+(`pip install clang-format==18.1.8`, which the Makefile finds by itself).
+CI runs it on every push.
 
 Generated headers are gitignored and never committed:
 `LizardKing/git_version.h` (from `gen_version.sh`) and `LizardKing/guide_exe.h`

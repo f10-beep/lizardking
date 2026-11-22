@@ -1,7 +1,10 @@
 # LizardKing build targets.
 
-# Pinned to clang-format 18: output differs between versions.
-CLANG_FORMAT ?= $(shell command -v clang-format-18 || command -v clang-format)
+# Pinned to clang-format 18: output differs between versions. Falls back to
+# the PyPI build (pip install clang-format==18.1.8), whose folder is often
+# not on the PATH.
+CLANG_FORMAT ?= $(shell command -v clang-format-18 || command -v clang-format || \
+	python3 -c "import clang_format, os; print(os.path.join(os.path.dirname(clang_format.__file__), 'data', 'bin', 'clang-format').replace(os.sep, '/'))" 2>/dev/null)
 
 FORMAT_FILES := $(shell find LizardKing \
 	\( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.ino' \) \

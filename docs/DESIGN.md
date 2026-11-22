@@ -7,6 +7,9 @@ games, on the desktop, at the Windows login screen and in admin (UAC)
 prompts. There is no Steam handoff and nothing changes by context. Which
 trackpads are touched is the only thing that picks the layer.
 
+Every decision here is made for the user, never handed to them as a setting
+(see "Opinionated by design" in `AGENTS.md`).
+
 ## USB
 
 One composite device, pid.codes test ID `1209:0001`:

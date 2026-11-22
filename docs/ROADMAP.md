@@ -2,18 +2,19 @@
 
 ## Finishing the port
 
-The first import keeps the build green and the product behaviour unchanged;
-what's left of OpenPuck's configurability goes next, one piece at a time,
-each followed by a simplification pass.
+The first import kept the build green and the product behaviour unchanged.
+What's left of OpenPuck's user-facing configurability, and the code that only
+served it, goes next, one piece at a time, each followed by a simplification
+pass.
 
-- **Configuration.** `config.cpp` still persists upstream's settings file
-  (`cfg.bin`: mouse divisors, rumble scale and style, per-type button
-  remaps, pad-to-stick mapping, lizard keepalive and more). Replace the
-  settings with constants and keep only what must survive a reboot: the
-  last good RF channel. Every install wipes the file system anyway, so the
-  file's layout needn't stay compatible.
-- **Per-type button remaps** (`etypeForMode`, `g_type`, `gamepad_util`):
-  always `ET_NONE` now; remove the remap plumbing.
+- **Settings file cleanup.** `cfg.bin` stays: it is where persisted
+  toggles (gyro on/off) and dev tunables set from the console (rumble
+  strength and style, sleep power-off) live, and every install wipes it,
+  so tuning never leaks into a release. Drop the fields nothing reads or
+  sets any more: the per-type button remaps (`etypeForMode`, `g_type`,
+  `gamepad_util`, always `ET_NONE`), the pad-to-stick mapping and the
+  Steam Machine flag. Every install wipes the file, so its layout needn't
+  stay compatible.
 - **Steam mode down to pairing.** `puck_hid` still carries upstream's full
   Steam presentation and its lizard fallback (`mode_lizard`, `lizard_map`,
   `MODE_LIZARD`). Keep what Steam needs to pair and, if it works out, drop

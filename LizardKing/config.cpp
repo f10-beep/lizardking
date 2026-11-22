@@ -12,7 +12,6 @@ bool g_xbox = false;
 
 bool g_isMachineInternal = false;
 
-
 int g_mDiv = 64, g_mFric = 94;
 
 // Per-type button config. back default {5,6,7,8} = L4->LB R4->RB L5->L3 R5->R3 (0..11 buttons, 12..15 D-pad,
@@ -237,8 +236,8 @@ void loadCfg()
 // UF2 carries the block already stamped (Makefile, KEEP_BONDS), so the bonds
 // survive. Stamping our own image is safe only because a UF2 install records
 // no app CRC; a serial DFU upload records one, which the stamp would fail.
-__attribute__((section(".fresh_install"), aligned(256), used)) static const uint32_t
-	g_freshInstall[64] = { 0xFFFFFFFFu };
+__attribute__((section(".fresh_install"), aligned(256),
+	       used)) static const uint32_t g_freshInstall[64] = { 0xFFFFFFFFu };
 
 void wipeOnFreshInstall()
 {

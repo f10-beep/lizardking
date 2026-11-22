@@ -577,11 +577,10 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 			// full F1 decode (seq-dedup guards double-forward), so a drag streaming haptics now collects
 			// ~2x the samples, closing the gap to the real puck. A present reply returns early (~90us);
 			// only a genuine no-reply pays the bounded 400us window, so airtime stays in budget.
-			rfConnTx(
-				ch, s1, p, plen,
-				// one relay per poll cycle -- reply harvested
-				// as input
-				400);
+			rfConnTx(ch, s1, p, plen,
+				 // one relay per poll cycle -- reply harvested
+				 // as input
+				 400);
 		}
 	}
 

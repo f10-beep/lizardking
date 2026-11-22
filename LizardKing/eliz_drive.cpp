@@ -107,7 +107,7 @@ static uint8_t *putLongName(uint8_t *e, const DriveFile &f)
 		e[13] = sum;
 		for (int i = 0; i < 13; i++) {
 			int c = (part - 1) * 13 + i;
-			uint16_t ch = c < len ? (uint8_t)f.longName[c] :
+			uint16_t ch = c < len  ? (uint8_t)f.longName[c] :
 				      c == len ? 0x0000 :
 						 0xFFFF;
 			put16(e + SLOT[i], ch);

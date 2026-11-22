@@ -196,33 +196,98 @@ enum { RID_KBD = 1, RID_MOUSE = 2, RID_WHEEL_MULT = 3, RID_MEDIA = 4 };
 // 1/120 notches. Input report: buttons, x, y, wheel (4 bytes).
 static const uint8_t ELIZ_HID_DESC[] = {
 	TUD_HID_REPORT_DESC_KEYBOARD(HID_REPORT_ID(RID_KBD)),
-	0x05, 0x01, // Usage Page (Generic Desktop)
-	0x09, 0x02, // Usage (Mouse)
-	0xA1, 0x01, // Collection (Application)
-	0x85, RID_MOUSE, //   Report ID
-	0x09, 0x01, //   Usage (Pointer)
-	0xA1, 0x00, //   Collection (Physical)
-	0x05, 0x09, //     Usage Page (Button)
-	0x19, 0x01, 0x29, 0x05, //     Usage Min 1, Max 5
-	0x15, 0x00, 0x25, 0x01, //     Logical 0..1
-	0x95, 0x05, 0x75, 0x01, 0x81, 0x02, //     5 x 1 bit, Input
-	0x95, 0x01, 0x75, 0x03, 0x81, 0x03, //     3 bit pad
-	0x05, 0x01, //     Usage Page (Generic Desktop)
-	0x09, 0x30, 0x09, 0x31, //     Usage X, Y
-	0x15, 0x81, 0x25, 0x7F, //     Logical -127..127
-	0x75, 0x08, 0x95, 0x02, 0x81, 0x06, //     2 x 8 bit, Input Rel
-	0xA1, 0x02, //     Collection (Logical)
-	0x85, RID_WHEEL_MULT, //       Report ID
-	0x09, 0x48, //       Usage (Resolution Multiplier)
-	0x15, 0x00, 0x25, 0x01, //       Logical 0..1
-	0x35, 0x01, 0x45, ELIZ_WHEEL_HIRES, //       Physical 1..120
-	0x75, 0x02, 0x95, 0x01, 0xB1, 0x02, //       2 bit, Feature
-	0x75, 0x06, 0xB1, 0x03, //       6 bit pad
-	0x85, RID_MOUSE, //       Report ID
-	0x09, 0x38, //       Usage (Wheel)
-	0x15, 0x81, 0x25, 0x7F, //       Logical -127..127
-	0x35, 0x00, 0x45, 0x00, //       Physical 0
-	0x75, 0x08, 0x95, 0x01, 0x81, 0x06, //       8 bit, Input Rel
+	0x05,
+	0x01, // Usage Page (Generic Desktop)
+	0x09,
+	0x02, // Usage (Mouse)
+	0xA1,
+	0x01, // Collection (Application)
+	0x85,
+	RID_MOUSE, //   Report ID
+	0x09,
+	0x01, //   Usage (Pointer)
+	0xA1,
+	0x00, //   Collection (Physical)
+	0x05,
+	0x09, //     Usage Page (Button)
+	0x19,
+	0x01,
+	0x29,
+	0x05, //     Usage Min 1, Max 5
+	0x15,
+	0x00,
+	0x25,
+	0x01, //     Logical 0..1
+	0x95,
+	0x05,
+	0x75,
+	0x01,
+	0x81,
+	0x02, //     5 x 1 bit, Input
+	0x95,
+	0x01,
+	0x75,
+	0x03,
+	0x81,
+	0x03, //     3 bit pad
+	0x05,
+	0x01, //     Usage Page (Generic Desktop)
+	0x09,
+	0x30,
+	0x09,
+	0x31, //     Usage X, Y
+	0x15,
+	0x81,
+	0x25,
+	0x7F, //     Logical -127..127
+	0x75,
+	0x08,
+	0x95,
+	0x02,
+	0x81,
+	0x06, //     2 x 8 bit, Input Rel
+	0xA1,
+	0x02, //     Collection (Logical)
+	0x85,
+	RID_WHEEL_MULT, //       Report ID
+	0x09,
+	0x48, //       Usage (Resolution Multiplier)
+	0x15,
+	0x00,
+	0x25,
+	0x01, //       Logical 0..1
+	0x35,
+	0x01,
+	0x45,
+	ELIZ_WHEEL_HIRES, //       Physical 1..120
+	0x75,
+	0x02,
+	0x95,
+	0x01,
+	0xB1,
+	0x02, //       2 bit, Feature
+	0x75,
+	0x06,
+	0xB1,
+	0x03, //       6 bit pad
+	0x85,
+	RID_MOUSE, //       Report ID
+	0x09,
+	0x38, //       Usage (Wheel)
+	0x15,
+	0x81,
+	0x25,
+	0x7F, //       Logical -127..127
+	0x35,
+	0x00,
+	0x45,
+	0x00, //       Physical 0
+	0x75,
+	0x08,
+	0x95,
+	0x01,
+	0x81,
+	0x06, //       8 bit, Input Rel
 	0xC0, //     End Collection
 	0xC0, //   End Collection
 	0xC0, // End Collection
@@ -233,8 +298,8 @@ static Adafruit_USBD_HID g_elizHid;
 // set by the host through RID_WHEEL_MULT (usbd task)
 static volatile bool s_wheelHiRes;
 
-static uint16_t elizGetReport(uint8_t id, hid_report_type_t type,
-			      uint8_t *buf, uint16_t len)
+static uint16_t elizGetReport(uint8_t id, hid_report_type_t type, uint8_t *buf,
+			      uint16_t len)
 {
 	if (id != RID_WHEEL_MULT || type != HID_REPORT_TYPE_FEATURE || !len)
 		return 0;
@@ -307,11 +372,11 @@ bool elizVendorControl(uint8_t rhport, uint8_t stage,
 {
 	// extended compat ID descriptor, one function: interface 0 -> XUSB10
 	static const uint8_t compat[40] = {
-		40,  0,	  0,   0,   0x00, 0x01, 0x04, 0x00, // len, ver, index
-		1,   0,	  0,   0,   0,	  0,	0,    0, // count, reserved
-		0,   1,	  'X', 'U', 'S',  'B',	'1',  '0', // itf 0, compat ID
-		0,   0,	  0,   0,   0,	  0,	0,    0, // sub-compat ID
-		0,   0,	  0,   0,   0,	  0, // reserved
+		40, 0, 0,   0,	 0x00, 0x01, 0x04, 0x00, // len, ver, index
+		1,  0, 0,   0,	 0,    0,    0,	   0, // count, reserved
+		0,  1, 'X', 'U', 'S',  'B',  '1',  '0', // itf 0, compat ID
+		0,  0, 0,   0,	 0,    0,    0,	   0, // sub-compat ID
+		0,  0, 0,   0,	 0,    0, // reserved
 	};
 	if (request->bRequest != ELIZ_MS_VENDOR || request->wIndex != 4 ||
 	    !(request->bmRequestType & 0x80))
@@ -548,8 +613,8 @@ static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 		{ K(GRAVE), 0, 0, 0, 0, 0, K(BRACKET_LEFT), 0 },
 		{},
 		// right thumb S: 1..5 on the top five, numpad keys below
-		{ K(2), K(3), K(5), K(EQUAL), K(KEYPAD_ADD),
-		  K(KEYPAD_SUBTRACT), K(4), K(1) },
+		{ K(2), K(3), K(5), K(EQUAL), K(KEYPAD_ADD), K(KEYPAD_SUBTRACT),
+		  K(4), K(1) },
 		// right thumb SE: F1..F5 where 1..5 are, F11 bottom
 		{ K(F2), K(F3), K(F5), 0, K(F11), 0, K(F4), K(F1) },
 	},
@@ -616,8 +681,7 @@ static bool analogPasses(uint8_t ch, bool active)
 }
 
 // Pad travel since last report, in pad counts; 0 on the first touched report.
-static void padDelta(Pad &p, bool touch, int16_t x, int16_t y, int *dx,
-		     int *dy)
+static void padDelta(Pad &p, bool touch, int16_t x, int16_t y, int *dx, int *dy)
 {
 	*dx = *dy = 0;
 	if (touch && p.on) {
@@ -781,8 +845,8 @@ static void sendKeyboard(uint8_t mod, const uint8_t keys[6])
 		return;
 	s_sentMod = mod;
 	memcpy(s_sentKeys, keys, 6);
-	uint8_t rep[8] = { mod, 0, keys[0], keys[1], keys[2], keys[3], keys[4],
-			   keys[5] };
+	uint8_t rep[8] = { mod,	    0,	     keys[0], keys[1],
+			   keys[2], keys[3], keys[4], keys[5] };
 	usbTxHid(&g_elizHid, RID_KBD, rep, sizeof rep);
 }
 
@@ -1265,8 +1329,8 @@ static void wheelSpeed(float n, int16_t p)
 	s_scroll.vel += (v - s_scroll.vel) * a;
 }
 
-static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y,
-		     int16_t p, uint32_t now)
+static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y, int16_t p,
+		     uint32_t now)
 {
 	float n = circularScroll(active, x, y);
 	if (active) {
@@ -1481,10 +1545,9 @@ static void elizProcess(const PuckInput &in)
 	gamepadStep(in);
 
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
-	const uint8_t zone[2] = {
-		padZone(s_pad[PAD_R], rTouch, in.rpx, in.rpy),
-		padZone(s_pad[PAD_L], lTouch, in.lpx, in.lpy)
-	};
+	const uint8_t zone[2] = { padZone(s_pad[PAD_R], rTouch, in.rpx, in.rpy),
+				  padZone(s_pad[PAD_L], lTouch, in.lpx,
+					  in.lpy) };
 	const bool wasOn[2] = { s_pad[PAD_R].on, s_pad[PAD_L].on };
 	int rdx, rdy, ldx, ldy;
 	padDelta(s_pad[PAD_R], rTouch, in.rpx, in.rpy, &rdx, &rdy);
