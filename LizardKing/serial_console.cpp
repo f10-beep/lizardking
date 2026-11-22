@@ -9,7 +9,6 @@
 #include "puck_hid.h" // g_cmdCapture (feature-command capture toggle)
 #include "fault_diag.h"
 #include "mode_eliz.h" // g_elizTrace
-#include "eliz_drive.h"
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <stdlib.h>
@@ -55,14 +54,19 @@ static void tildeCommand(const char *a)
 		Serial.printf("# scroll trace %s\n",
 			      g_elizScrollTrace ? "ON" : "off");
 		return;
-	case 'd':
-		elizDriveToggle();
-		return;
 	case 'g':
 		elizGuideBeat();
 		return;
 	case 'h':
 		elizGuideRelease();
+		return;
+	case 'b':
+		// make flash: the UF2 bootloader's drive takes the install file
+		Serial.println("# UF2 bootloader");
+		Serial.flush();
+		delay(40);
+		faultDiagArmIntentionalReset();
+		enterUf2Dfu();
 		return;
 	case 'p':
 		rid = 0x81;
@@ -117,18 +121,7 @@ void serialConsolePoll()
 				li = 0;
 				continue;
 			}
-			// FULL factory wipe -- requires the exact word "ERASE-ALL" so it can't be fat-fingered. Reformats the
-			// internal FS (cfg.bin + bonds.bin gone), reboots into clean defaults; controller must be re-paired.
-			if (!strcmp(line, "ERASE-ALL")) {
-				Serial.println(
-					"# ERASING ALL persistent storage (config + bonds)...");
-				factoryErase();
-				Serial.println(
-					"# done -- rebooting into clean defaults; re-pair the controller");
-				delay(40);
-				faultDiagArmIntentionalReset();
-				NVIC_SystemReset();
-			} else if (!strcmp(line, "CD")) {
+			if (!strcmp(line, "CD")) {
 				// A/B: content dedup on the Steam input forward (drop reports whose body minus the
 				// free-running counter is unchanged) -- caps delivered rate at the controller's real
 				// distinct-report rate instead of the poll rate.
@@ -292,24 +285,6 @@ void serialConsolePoll()
 					"# id9=0 hold (Steam mode, /%ums) %s\n",
 					(unsigned)LIZKEEP_MS,
 					g_lizKeep ? "ON" : "off");
-			}
-
-			// x<mode>: reboot into a mode (0 Steam, 13 LizardKing)
-			else if (line[0] == 'x') {
-				uint8_t m = strtoul(line + 1, 0, 10);
-				if (modeValid(m)) {
-					if (USBDevice.suspended()) {
-						Serial.println(
-							"# mode change blocked: host suspended");
-					} else {
-						Serial.printf(
-							"# switch mode %u (reboot)\n",
-							m);
-						delay(20);
-						// clean detach + reboot (releases held input on the outgoing device)
-						modeSwitchReboot(m);
-					}
-				}
 			} else if (line[0] == 'c') {
 				g_rfCh = atoi(line + 1);
 				Serial.printf("# ch=%u\n", g_rfCh);

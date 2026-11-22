@@ -9,7 +9,6 @@ using namespace Adafruit_LittleFS_Namespace;
 
 uint8_t g_usbMode = 0;
 bool g_xbox = false;
-static uint8_t g_bootMode = 0xFF;
 
 bool g_isMachineInternal = false;
 
@@ -130,7 +129,7 @@ void saveCfg()
 		  0,
 		  (uint8_t)(g_pollUs / 100),
 		  0,
-		  g_bootMode,
+		  0xFF,
 		  { 0xFF, 0xFF, 0xFF },
 		  (uint8_t)(g_rumbleScale / 2), // host-rumble strength, pct/2
 		  (uint8_t)(g_rxWin / 10),
@@ -165,7 +164,6 @@ void loadCfg()
 	memset(&c, 0xFF, sizeof c);
 	File f(InternalFS);
 	bool consume = false;
-	bool oneShotBoot = false;
 	if (f.open(CFG_FILE, FILE_O_READ)) {
 		int got = f.read((uint8_t *)&c, sizeof c);
 		// Accept a file that is short only in the appended tail (>= CFG_LEN_MIN): an upgrade from a build
@@ -186,14 +184,6 @@ void loadCfg()
 			// poll rate is fixed; rewrite cfg so the persisted byte matches the new default.
 			if (c.pollU100 != (uint8_t)(POLL_US_DEFAULT / 100))
 				consume = true;
-			// a one-shot bootMode (an explicit mode chord) wins
-			// once, then clears
-			if (c.bootMode != 0xFF) {
-				g_usbMode = modeValid(c.bootMode) ? c.bootMode :
-								    MODE_ELIZ;
-				consume = true;
-				oneShotBoot = true;
-			}
 			// Pad->stick mapping: 0xFF (a file predating this tail field) or an out-of-range
 			// value keeps the compiled default (off).
 			for (int i = 0; i < ET_COUNT; i++)
@@ -236,64 +226,29 @@ void loadCfg()
 		}
 		f.close();
 	}
-	// LizardKing always boots its fixed layout. Other modes are reachable
-	// only for the one boot after an explicit switch (mode chord, panel).
-	if (!oneShotBoot)
-		g_usbMode = MODE_ELIZ;
 	// resolve the active emulated type's settings into the live mirrors the mode builders read
 	applyActiveType();
-	// clear the one-shot so the NEXT cold boot reverts to the default/persist policy
-	if (consume) {
-		g_bootMode = 0xFF;
+	if (consume)
 		saveCfg();
-	}
 }
 
-void saveMode(uint8_t m)
-{
-	// One-shot only: the fixed LizardKing boot in loadCfg() overrides a
-	// persisted mode, so the switch would silently not happen.
-	g_bootMode = m;
-	saveCfg();
-}
+// A UF2 install writes this block as the image has it (word 0 blank), and the
+// first boot after it stamps word 0, so every install starts unpaired. The dev
+// UF2 carries the block already stamped (Makefile, KEEP_BONDS), so the bonds
+// survive. Stamping our own image is safe only because a UF2 install records
+// no app CRC; a serial DFU upload records one, which the stamp would fail.
+__attribute__((section(".fresh_install"), aligned(256), used)) static const uint32_t
+	g_freshInstall[64] = { 0xFFFFFFFFu };
 
-
-// FULL factory wipe: reformat the internal LittleFS, erasing cfg.bin (modes/tunables/chords) AND bonds.bin
-// (paired-controller record). Caller reboots: next boot finds no files and falls back to clean defaults, and
-// the controller must be re-paired. Irreversible -- gated behind explicit confirmation at every call site.
-void factoryErase()
+void wipeOnFreshInstall()
 {
-	// ensure mounted before we reformat (no-op if already up)
-	InternalFS.begin();
+	volatile const uint32_t *w = g_freshInstall;
+	if (*w != 0xFFFFFFFFu)
+		return;
 	InternalFS.format();
-}
-
-// One-time factory reset for the -DOPK_FACTORY_RESET recovery build: clear a bad config/bond ONCE (first boot
-// after flashing) then persist normally. "Already reset" is tracked by a tag file holding the build's git hash,
-// written AFTER the wipe (so it survives in the freshly-formatted FS):
-//   - tag missing or != this build's hash  -> wipe, then stamp the tag. Next boot persists.
-//   - tag == this build's hash             -> already reset for this build: skip, boot normally.
-// Keying the tag to the git hash means flashing a DIFFERENT build re-triggers the wipe. buildTag is OPK_GIT_HASH.
-#define RESET_TAG_FILE "/rsttag"
-void factoryResetOnce(const char *buildTag)
-{
-	char tag[24] = { 0 };
-	{
-		File f(InternalFS);
-		if (f.open(RESET_TAG_FILE, FILE_O_READ)) {
-			int n = f.read((uint8_t *)tag, sizeof tag - 1);
-			if (n > 0)
-				tag[n] = 0;
-			f.close();
-		}
+	NRF_NVMC->CONFIG = NVMC_CONFIG_WEN_Wen << NVMC_CONFIG_WEN_Pos;
+	*(volatile uint32_t *)w = 0;
+	while (!NRF_NVMC->READY) {
 	}
-	if (strncmp(tag, buildTag, sizeof tag - 1) == 0)
-		return; // this build already did its one-time reset -> persist
-	factoryErase(); // wipe cfg.bin + bonds.bin + the old tag
-	InternalFS.begin(); // remount the fresh FS
-	File g(InternalFS); // stamp the tag so subsequent boots skip the wipe
-	if (g.open(RESET_TAG_FILE, FILE_O_WRITE)) {
-		g.write((const uint8_t *)buildTag, strlen(buildTag));
-		g.close();
-	}
+	NRF_NVMC->CONFIG = NVMC_CONFIG_WEN_Ren << NVMC_CONFIG_WEN_Pos;
 }

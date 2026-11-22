@@ -26,12 +26,12 @@ static const char README[] =
 	"controller. It changes with what your thumbs are touching.\r\n"
 	"\r\n"
 	"Nothing is installed unless you ask: while the Guide is open,\r\n"
-	"hold the four back buttons and press Start to install it.\r\n"
+	"hold the Guide (Steam) button and press Start to install it.\r\n"
 	"\r\n"
 	"Windows may say the program is from an unknown publisher: it is\r\n"
 	"not code-signed. Leave your security settings as they are.\r\n"
 	"\r\n"
-	"Tap the four back buttons again to hide this drive.\r\n";
+	"The drive hides itself once the Guide is running.\r\n";
 
 // 1 MB FAT12 volume, one 512-byte sector per cluster
 enum {
@@ -266,7 +266,8 @@ void elizDriveBegin()
 void elizDriveTask()
 {
 	bool mounted = TinyUSBDevice.mounted();
-	if (mounted && !s_wasMounted)
+	// its only job is starting the Guide, so the Guide connecting hides it
+	if ((mounted && !s_wasMounted) || Serial)
 		s_shown = false;
 	s_wasMounted = mounted;
 }
@@ -274,9 +275,6 @@ void elizDriveTask()
 bool elizDriveToggle()
 {
 	s_shown = !s_shown;
-	if (Serial)
-		Serial.printf("# guide drive %s\n",
-			      s_shown ? "shown" : "hidden");
 	return s_shown;
 }
 
@@ -292,8 +290,6 @@ void elizDriveTask()
 
 bool elizDriveToggle()
 {
-	if (Serial)
-		Serial.printf("# guide drive not built in\n");
 	return false;
 }
 

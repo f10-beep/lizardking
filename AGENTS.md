@@ -101,8 +101,9 @@ Short trailing comments that fit within 80 columns are fine.
 ## Build and check
 
 ```sh
-make build    # firmware compile (no hardware needed)
-make flash PORT=COM12
+make build    # firmware and both UF2s (no hardware needed)
+make flash    # installs the release UF2: wipes the pairing
+make flash KEEP_BONDS=1   # the dev UF2: keeps the pairing
 make check    # format-check + trailing-comment lint
 make format   # apply kernel style
 ```
@@ -117,4 +118,10 @@ Generated headers are gitignored and never committed:
 ## Flashing
 
 Flashing interrupts the user's controller. Don't reflash for trivial or
-cosmetic changes; batch them with a real one. Commit and push only when asked.
+cosmetic changes; batch them with a real one. Use `KEEP_BONDS=1` unless the
+point is to test the install path: a release flash means pairing again in
+Steam. `make flash` reaches the puck over the serial port (it asks a running
+Guide to quit first), and an unpaired puck (Steam mode, no serial port)
+needs a double-tap of reset first. Never upload over serial DFU (`arduino-cli
+upload`): it records a firmware checksum that the first-boot stamp then
+breaks (docs/DESIGN.md, Installing). Commit and push only when asked.

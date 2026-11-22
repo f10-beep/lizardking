@@ -27,23 +27,29 @@ An nRF52840 board running the Adafruit bootloader (the same boards
 [OpenPuck](https://github.com/safijari/openpuck) supports), paired with a
 Steam Controller 2.
 
-## Build and flash
+## Install
+
+1. Double-tap the board's reset button: a drive appears.
+2. Copy `LizardKing.uf2` onto it. The board restarts unpaired.
+3. Plug the puck and the controller into the PC and, with Steam running,
+   pair as you would with Valve's puck. Pair every controller you want now.
+4. Unplug the puck and plug it back in: it starts as LizardKing.
+5. Hold the controller's Guide (Steam) button for half a second: the guide
+   drive appears. Start `LizardKing Guide.exe` from it to learn the layout.
+
+Lost or replaced a controller? Install again: every install starts unpaired.
+
+## Build
 
 Needs [arduino-cli](https://arduino.github.io/arduino-cli/) with the Adafruit
 nRF52 core. On Windows the build also embeds the Guide, compiled with the
 .NET Framework's own C# compiler.
 
 ```sh
-make build
-make flash PORT=COM12
+make build                # build/out/LizardKing.uf2 and LizardKing-dev.uf2
+make flash                # install LizardKing.uf2 on the puck
+make flash KEEP_BONDS=1   # the dev UF2: keeps the puck's pairing
 ```
-
-## Pairing
-
-Pairing goes through Steam. Hold the four back buttons and press **A**: the
-puck reboots into Steam mode. With the controller and the puck both plugged
-into the same PC and Steam running, pair as you would with Valve's puck.
-Back four + **B** (or a replug) returns to LizardKing.
 
 ## Credits and licence
 

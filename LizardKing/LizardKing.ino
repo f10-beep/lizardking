@@ -43,20 +43,6 @@ using namespace Adafruit_LittleFS_Namespace;
 // core's default 256 B configuration buffer
 static uint8_t g_usbCfgDesc[512];
 
-// A bare reset drops the D+ pull-up too briefly for some hosts to register an
-// unplug, so the outgoing device lingers with any held input stuck on it.
-// Detaching first makes the reboot behave like a replug.
-void modeSwitchReboot(uint8_t mode)
-{
-	if (modeValid(mode))
-		saveMode(mode);
-	if (USBDevice.mounted())
-		USBDevice.detach();
-	delay(60);
-	faultDiagArmIntentionalReset();
-	NVIC_SystemReset();
-}
-
 static void usbPresent()
 {
 	USBDevice.detach();
@@ -72,7 +58,7 @@ static void usbPresent()
 		// Hosts cache USB identity by VID:PID:serial; the bond count in
 		// the serial keeps the cached descriptor honest.
 		snprintf(g_usbSerial, sizeof g_usbSerial, "%sZ%d", g_unit,
-			 bondedSlotCount() > 0 ? bondedSlotCount() : 1);
+			 bondedSlotCount());
 		USBDevice.setSerialDescriptor(g_usbSerial);
 	}
 	g_active->begin();
@@ -105,9 +91,7 @@ void setup()
 	for (int s = 0; s < NSLOT; s++)
 		rfGenSessionAddr(s);
 	InternalFS.begin();
-#if OPK_FACTORY_RESET
-	factoryResetOnce(OPK_GIT_HASH);
-#endif
+	wipeOnFreshInstall();
 	loadCfg();
 	rfApplyStartupLastGoodChannel();
 	loadBonds();
@@ -117,6 +101,8 @@ void setup()
 	for (int s = 0; s < NSLOT; s++)
 		if (g_slot[s].used)
 			rfGenSessionAddr(s);
+	// unpaired (a fresh install) boots into Steam mode, ready to pair
+	g_usbMode = bondedSlotCount() ? MODE_ELIZ : MODE_STEAM;
 
 	g_xbox = !modeIsPuck(g_usbMode);
 	g_active = controllerFor(g_usbMode);

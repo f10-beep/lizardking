@@ -349,9 +349,8 @@ static const uint32_t CLICK_BIT[2] = { TB_RPADC, TB_LPADC };
 static const uint32_t TRIG_BIT[2] = { TB_R2, TB_L2 };
 // A click in the center is armed: sliding out types the zone it enters. A
 // held key ends when the thumb leaves its zone; sliding straight into another
-// key zone types nothing (dead) until the thumb returns to the center. Both
-// centers clicked together is a command (KS_CHORD), inert until released.
-enum { KS_IDLE, KS_CENTER, KS_KEY, KS_DEAD, KS_CHORD };
+// key zone types nothing (dead) until the thumb returns to the center.
+enum { KS_IDLE, KS_CENTER, KS_KEY, KS_DEAD };
 enum { AN_LT, AN_RT, AN_LSTICK, AN_RSTICK, AN_N };
 enum { AN_FREE, AN_OWNED, AN_BLOCKED };
 
@@ -368,6 +367,10 @@ static uint16_t s_sentMedia;
 static float s_carryX, s_carryY;
 static float s_tickDist;
 static uint32_t s_tickMs;
+// the Guide button (see guideButton); the puck owns the key map switches
+// and the Guide follows the "KT" line
+static bool s_keymapOn = true, s_keymapLow = true;
+static uint32_t s_guideTapUntil, s_bumpAgainAt, s_statusMs;
 
 // circular scroll on the left pad
 static struct {
@@ -438,7 +441,6 @@ static uint16_t gamepadButtons(uint32_t b)
 		// TB_VIEW is the physical Start side; see triton.h
 		{ TB_VIEW, XB_START },
 		{ TB_MENU, XB_BACK },
-		{ TB_STEAM, XB_GUIDE },
 		{ TB_LB, XB_LB },
 		{ TB_RB, XB_RB },
 		{ TB_L3, XB_L3 },
@@ -741,8 +743,8 @@ static void ballStep(bool held, bool touch, float tx, float ty, int16_t p,
 
 // The Guide's practice mode: while it shows its full-screen window it asks
 // for the controller's input (a "~g" at least every GUIDE_BEAT_MS) and the
-// host gets none, only "nothing pressed" -- except cursor movement, so the
-// pointer can still be moved off something it covers. The Guide still sees
+// host gets none, only "nothing pressed", cursor included (the Guide parks
+// the cursor out of its way). The Guide still sees
 // everything through its serial feed. The beat comes from the Guide's
 // window thread, so a Guide that hangs, crashes or closes the port hands the
 // controller back within GUIDE_BEAT_MS.
@@ -787,7 +789,7 @@ static void sendKeyboard(uint8_t mod, const uint8_t keys[6])
 static void sendMouse(uint8_t btn, int dx, int dy, int wheel)
 {
 	if (guideHolds())
-		btn = wheel = 0;
+		btn = dx = dy = wheel = 0;
 	if (!dx && !dy && !wheel && btn == s_sentMBtn)
 		return;
 	s_sentMBtn = btn;
@@ -942,6 +944,10 @@ static void ownButtons(uint32_t b, uint8_t touchLayer)
 static void gamepadStep(const PuckInput &in)
 {
 	s_gp.btn = gamepadButtons(s_own[LY_PAD]);
+	if (s_guideTapUntil && (int32_t)(s_guideTapUntil - millis()) > 0)
+		s_gp.btn |= XB_GUIDE;
+	else
+		s_guideTapUntil = 0;
 	bool lt = analogPasses(AN_LT, in.lt > ELIZ_TRIG_REST);
 	bool rt = analogPasses(AN_RT, in.rt > ELIZ_TRIG_REST);
 	bool ls = analogPasses(AN_LSTICK, stickActive(in.lx, in.ly));
@@ -984,9 +990,6 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 					hapticKey(PULSE_SIDE[i], false);
 				else if (pd.kst == KS_IDLE)
 					hapticClick(PULSE_SIDE[i], false);
-				else if (pd.kst == KS_CHORD)
-					hapticTone(TONE_SIDE[i], ELIZ_BUMP_DB,
-						   ELIZ_BUMP_DUR);
 				pd.kst = KS_IDLE;
 				pd.key = 0;
 			} else if (!(s_own[LY_KBD] & CLICK_BIT[i])) {
@@ -1009,15 +1012,6 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 		} else if (pd.kst == KS_DEAD && pos < 0) {
 			pd.kst = KS_CENTER;
 		}
-	}
-	// both centers clicked together: move the trainer overlay
-	if (s_pad[PAD_R].kst == KS_CENTER && s_pad[PAD_L].kst == KS_CENTER) {
-		for (int i = 0; i < 2; i++) {
-			s_pad[i].kst = KS_CHORD;
-			hapticTone(TONE_SIDE[i], ELIZ_BUMP_DB, ELIZ_BUMP_DUR);
-		}
-		if (Serial && Serial.availableForWrite() >= 4)
-			Serial.printf("KP\n");
 	}
 }
 
@@ -1320,6 +1314,8 @@ static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y,
 	int wheel = clampI8(pending);
 	if (wheel)
 		s_scroll.sentMs = now;
+	if (g_elizScrollTrace && wheel && Serial.availableForWrite() > 24)
+		Serial.printf("WS %d hires=%d\n", wheel, s_wheelHiRes ? 1 : 0);
 	s_scroll.notches -= wheel / per;
 	if (stopped && !wheel)
 		s_scroll.notches = 0;
@@ -1375,107 +1371,102 @@ static void bumpBoth()
 		hapticTone(TONE_SIDE[i], ELIZ_BUMP_DB, ELIZ_BUMP_DUR);
 }
 
-// A back 4 squeeze counts only when it is clean: all four back buttons going
-// down within BACK_HOLD_MS of the first, starting from none held, in one
-// layer. Anything messier (some held from before, a pad touched halfway,
-// other buttons) is just those buttons.
-#define BACK_HOLD_MS 150
+// The Guide button (the controller's Steam button) reaches LizardKing before
+// the host. In the gamepad layer a tap goes to Windows as the Xbox Guide
+// press (Game Bar, the Steam overlay), and a hold past GUIDE_MEDIUM_MS is
+// LizardKing's own: the Guide on, or without a Guide the guide drive. Guide +
+// another button is a chord, in any layer, and neither reaches the host.
+// While the Guide is up, any press that isn't a chord puts it away.
+#define GUIDE_MEDIUM_MS 400
+// how long the forwarded tap holds the Xbox Guide button
+#define GUIDE_TAP_MS 80
 
-// Back 4 (all four back buttons) as a gesture. A plain tap -- a clean
-// squeeze, then all released with no other button pressed in between --
-// asks the Guide to cycle its mode ("KG") when one holds the serial port,
-// and otherwise shows or hides the guide drive. Firing on release keeps it
-// apart from the mode-switch chords (back 4 + a face button or d-pad).
-// Back 4 + Start asks the Guide to install itself ("KI"); Start is kept
-// from the host while the back buttons are held.
-static uint32_t back4Gesture(uint32_t raw, uint32_t now)
+// a switch confirms with two bumps for on, one for off
+static void confirm(bool on)
 {
-	static bool armed, spoiled, startWas, gathering;
-	static uint32_t first;
-	static uint8_t layer;
-	uint32_t back = raw & CHORD_BACK4;
-	bool all = back == CHORD_BACK4;
-	if (!back) {
-		gathering = false;
-	} else if (!gathering && !armed) {
-		gathering = true;
-		first = now;
-		layer = s_layer;
+	bumpBoth();
+	s_bumpAgainAt = on ? (millis() + 120) | 1 : 0;
+}
+
+static void guideChord(uint32_t btn)
+{
+	if (!(btn & (TB_RPADC | TB_LPADC | TB_VIEW)))
+		return;
+	if (!Serial) {
+		// these need the Guide
+		bumpBoth();
+		return;
 	}
-	if (all && !armed) {
-		armed = true;
-		spoiled = !gathering || now - first > BACK_HOLD_MS;
-	}
-	if (armed && s_layer != layer)
-		spoiled = true;
-	bool start = all && (raw & TB_VIEW);
-	if (start && !startWas && armed && !spoiled && Serial) {
+	if (btn & TB_RPADC) {
+		s_keymapOn = !s_keymapOn;
+		confirm(s_keymapOn);
+	} else if (btn & TB_LPADC) {
+		s_keymapLow = !s_keymapLow;
+		bumpBoth();
+	} else {
 		Serial.printf("KI\n");
 		bumpBoth();
 	}
-	startWas = start;
-	if (armed && (raw & ELIZ_BTN_MASK & ~CHORD_BACK4))
-		spoiled = true;
-	if (armed && !back) {
-		armed = false;
-		if (!spoiled) {
-			if (Serial)
-				Serial.printf("KG\n");
-			else
-				elizDriveToggle();
-			bumpBoth();
-		}
-	}
-	return all ? raw & ~TB_VIEW : raw;
+	// report the switches now rather than within the second
+	s_statusMs = 0;
 }
 
-// In the mouse and keyboard layers back 4 is Shift + Ctrl + Win + Alt, which
-// Windows reads as the Office key (it opens the Microsoft 365 / Copilot
-// app). So the first back button's modifier waits up to BACK_HOLD_MS for the
-// other three; if all four arrive it is the back 4 gesture and none reach
-// the host. Otherwise the held ones go out as soon as anything else happens
-// -- another button (so Shift + key still arrive together), a held one let
-// go (sent for that one report, so a quick tap still clicks), a layer
-// change, or the time running out -- and they belong to the layer they were
-// pressed in, like any held button. The gamepad layer gets no delay.
-static uint32_t holdBack(uint32_t raw, uint32_t now)
+// Only a press begun in the gamepad layer opens anything (the Guide, the
+// drive, Windows' Guide): with a thumb on a pad the Guide button is a chord
+// about to happen. Closing the Guide works from any layer. The medium press
+// answers the moment the hold passes GUIDE_MEDIUM_MS, so the Guide (or the
+// drive) appearing is the sign it worked; holding on changes nothing.
+static void guideMedium(bool gamepad)
 {
-	static bool holding, gesture;
-	static uint32_t since, held, prev;
-	static uint8_t layer;
-	uint32_t back = raw & CHORD_BACK4, was = prev;
-	prev = back;
-	if (gesture) {
-		if (!back)
-			gesture = false;
-		return raw & ~CHORD_BACK4;
+	bool up = guideHolds();
+	if (up || (gamepad && Serial)) {
+		Serial.printf("KG\n");
+		confirm(!up);
+	} else if (gamepad) {
+		confirm(elizDriveToggle());
 	}
-	if (!holding) {
-		if (!back || was || s_layer == LY_PAD)
-			return raw;
-		holding = true;
-		since = now;
-		held = 0;
-		layer = s_layer;
+}
+
+static void guideTap(uint32_t now, bool gamepad)
+{
+	if (guideHolds())
+		guideMedium(gamepad);
+	else if (gamepad)
+		s_guideTapUntil = (now + GUIDE_TAP_MS) | 1;
+}
+
+// Takes the Guide button and any chord buttons out of the report; a chord's
+// button stays the puck's until it is released. A press is spent by a chord
+// or by reaching the medium press; a release that isn't is a tap.
+static uint32_t guideButton(uint32_t raw, uint32_t now)
+{
+	static bool down, spent, gamepad;
+	static uint32_t since, prev, swallow;
+	uint32_t fresh = raw & ~prev & ELIZ_BTN_MASK & ~TB_STEAM;
+	prev = raw;
+	if (raw & TB_STEAM) {
+		if (!down) {
+			down = true;
+			spent = false;
+			gamepad = s_layer == LY_PAD;
+			since = now;
+		}
+		if (fresh) {
+			spent = true;
+			swallow |= fresh;
+			guideChord(fresh);
+		}
+		if (!spent && now - since >= GUIDE_MEDIUM_MS) {
+			spent = true;
+			guideMedium(gamepad);
+		}
+	} else if (down) {
+		down = false;
+		if (!spent)
+			guideTap(now, gamepad);
 	}
-	held |= back;
-	if (back == CHORD_BACK4) {
-		holding = false;
-		gesture = true;
-		return raw & ~CHORD_BACK4;
-	}
-	uint32_t letGo = held & ~back;
-	bool other = raw & ELIZ_BTN_MASK & ~CHORD_BACK4;
-	if (other || letGo || s_layer != layer ||
-	    now - since >= BACK_HOLD_MS) {
-		holding = false;
-		// hand them to the layer they were pressed in, and mark them
-		// seen so ownButtons() doesn't reassign them to the current one
-		s_own[layer] |= held;
-		s_prevBtn |= held;
-		return raw | letGo;
-	}
-	return raw & ~CHORD_BACK4;
+	swallow &= raw;
+	return raw & ~TB_STEAM & ~swallow;
 }
 
 static void elizProcess(const PuckInput &in)
@@ -1483,10 +1474,10 @@ static void elizProcess(const PuckInput &in)
 	uint32_t now = millis();
 	uint32_t derived = deriveButtons(in);
 	streamInput(in, derived, now);
-	uint32_t raw = back4Gesture(derived, now);
+	uint32_t raw = guideButton(derived, now);
 	uint8_t touchLayer = layerFromTouch(in.buttons);
 	layerStep(touchLayer, now);
-	ownButtons(holdBack(raw, now) & ELIZ_BTN_MASK, touchLayer);
+	ownButtons(raw & ELIZ_BTN_MASK, touchLayer);
 	gamepadStep(in);
 
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
@@ -1540,8 +1531,7 @@ void EnhancedLizardController::begin()
 	g_elizHid.setStringDescriptor("LizardKing Keyboard/Mouse");
 	g_elizHid.setPollInterval(1);
 	g_elizHid.begin();
-	// Standard CDC: keeps the Arduino 1200-baud "touch" reset into the
-	// bootloader (arduino-cli upload / make flash) and the serial console.
+	// standard CDC: the Guide's link and the serial console
 	Serial.setStringDescriptor("LizardKing Serial");
 	TinyUSBDevice.addInterface(Serial);
 	// last, so the CDC function keeps its interface number (and Windows
@@ -1578,23 +1568,24 @@ void EnhancedLizardController::emit(uint8_t slot, uint32_t generation,
 		     s_gp.ly, s_gp.rx, s_gp.ry);
 }
 
-// Controller status for the Guide, about once a second while it holds the
-// port: "KT connected battery% charge signal" (charge as in report 0x43:
+// Status for the Guide, about once a second while it holds the port:
+// "KT connected battery% charge signal keymap low" (charge as in report 0x43:
 // 1 discharging, 2 charging, 4 charged, 0 unknown; signal in -dBm, 0 = no
-// sample yet).
+// sample yet; keymap and low are the key map switches).
 static void streamStatus(uint32_t now)
 {
-	static uint32_t lastMs;
-	if (now - lastMs < 1000 || !Serial || Serial.availableForWrite() < 32)
+	if (now - s_statusMs < 1000 || !Serial ||
+	    Serial.availableForWrite() < 40)
 		return;
-	lastMs = now;
+	s_statusMs = now;
 	bool on = s_slot >= 0;
 	int rssi = on && g_linkRssi[s_slot] > RSSI_DBM_OFFSET ?
 			   g_linkRssi[s_slot] - RSSI_DBM_OFFSET :
 			   0;
 	unsigned batt = on ? g_battery[s_slot] : 0;
 	unsigned charge = on ? g_batteryState[s_slot] : 0;
-	Serial.printf("KT %d %u %u %d\n", on ? 1 : 0, batt, charge, rssi);
+	Serial.printf("KT %d %u %u %d %d %d\n", on ? 1 : 0, batt, charge, rssi,
+		      s_keymapOn, s_keymapLow);
 }
 
 void EnhancedLizardController::task()
@@ -1602,6 +1593,10 @@ void EnhancedLizardController::task()
 	XboxController::task();
 	elizDriveTask();
 	streamStatus(millis());
+	if (s_bumpAgainAt && (int32_t)(millis() - s_bumpAgainAt) >= 0) {
+		s_bumpAgainAt = 0;
+		bumpBoth();
+	}
 	if (s_slot >= 0 && !bondAlive(s_slot, millis())) {
 		releaseAll();
 		s_slot = -1;

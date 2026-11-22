@@ -21,13 +21,17 @@ EXTRA_FLAGS ?=
 CFG_TUD_HID ?= 6
 CFG_TUD_TASK_QUEUE_SZ ?= 512
 RF_JOURNAL_BASE ?= 0x86000
+# the first-boot stamp's block (wipeOnFreshInstall), just below the journal;
+# ld refuses a link whose code grows into it
+FRESH_INSTALL_BASE = 0x85F00
 
 USB_FLAGS = -DNRF52840_XXAA {build.flags.usb} -DCFG_TUD_HID=$(CFG_TUD_HID) \
 	-DCFG_TUD_TASK_QUEUE_SZ=$(CFG_TUD_TASK_QUEUE_SZ) \
 	-DOPK_RF_JOURNAL_BASE=$(RF_JOURNAL_BASE) $(EXTRA_FLAGS)
 LINK_FLAGS = -Wl,--wrap=tud_vendor_control_xfer_cb \
 	-Wl,--wrap=tud_descriptor_string_cb \
-	-Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE)
+	-Wl,--section-start=.rf_journal_guard=$(RF_JOURNAL_BASE) \
+	-Wl,--section-start=.fresh_install=$(FRESH_INSTALL_BASE)
 
 # The guide drive carries the Windows Guide. On Windows the build compiles it
 # with the .NET Framework's own csc and embeds it; elsewhere, or with
@@ -36,9 +40,23 @@ LIZARD_DRIVE ?= 1
 GUIDE_H = $(SKETCH)/guide_exe.h
 CSC ?= /c/Windows/Microsoft.NET/Framework64/v4.0.30319/csc.exe
 
-PORT ?=
+# The install file is a UF2. The firmware wipes the pairing on its first boot
+# after an install (wipeOnFreshInstall); the dev UF2 carries that block already
+# stamped, and keeps the pairing.
+ARDUINO_DATA := $(shell p="$$(arduino-cli config get directories.data)"; \
+	command -v cygpath >/dev/null && cygpath -m "$$p" || echo "$$p")
+UF2CONV = $(firstword $(wildcard \
+	$(ARDUINO_DATA)/packages/adafruit/hardware/nrf52/*/tools/uf2conv/uf2conv.py))
+OBJCOPY = $(firstword $(wildcard \
+	$(ARDUINO_DATA)/packages/adafruit/tools/arm-none-eabi-gcc/*/bin/arm-none-eabi-objcopy*))
+UF2_FAMILY = 0xADA52840
+HEX = $(OUTPUT_DIR)/$(SKETCH).ino.hex
+ELF = $(OUTPUT_DIR)/$(SKETCH).ino.elf
+UF2_RELEASE = $(OUTPUT_DIR)/$(SKETCH).uf2
+UF2_DEV = $(OUTPUT_DIR)/$(SKETCH)-dev.uf2
 
-.PHONY: need-clang-format format format-check check build guide-header \n	flash deploy
+.PHONY: need-clang-format format format-check check build guide-header \
+	flash deploy
 
 need-clang-format:
 	@[ -n "$(CLANG_FORMAT)" ] || { echo "clang-format 18 not found"; exit 1; }
@@ -72,10 +90,17 @@ build: guide-header
 		--build-property "build.extra_flags=$(USB_FLAGS)" \
 		--build-property "compiler.c.elf.extra_flags=$(LINK_FLAGS)" \
 		$(SKETCH)
+	# copied first: the Microsoft Store Python can't read the Arduino data dir
+	cp "$(UF2CONV)" build/uf2conv.py
+	python3 build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_RELEASE) $(HEX)
+	head -c 256 /dev/zero > build/stamped.bin
+	"$(OBJCOPY)" -O ihex --update-section .fresh_install=build/stamped.bin \
+		$(ELF) build/dev.hex
+	python3 build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_DEV) build/dev.hex
 
-# make flash PORT=COM12
+# make flash KEEP_BONDS=1 keeps the puck's bonds (dev only)
 flash:
-	@[ -n "$(PORT)" ] || { echo "usage: make flash PORT=<port>"; exit 1; }
-	arduino-cli upload -b $(FQBN) -p "$(PORT)" --input-dir $(OUTPUT_DIR) $(SKETCH)
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/flash.ps1 \
+		"$(if $(filter 1,$(KEEP_BONDS)),$(UF2_DEV),$(UF2_RELEASE))"
 
 deploy: build flash

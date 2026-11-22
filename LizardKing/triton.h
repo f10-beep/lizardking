@@ -50,9 +50,6 @@
 #define TB_TOUCH 0x40000000u // PS touchpad click
 #define TB_MUTE 0x80000000u // PS5 mute
 
-// all four back paddles held -> mode-switch chord guard
-#define CHORD_BACK4 (TB_R4 | TB_L4 | TB_R5 | TB_L5)
-
 // analog-trigger fraction (of 0xFF) at which digital ZL/ZR (Switch) etc. trip
 #define SW_TRIG_ON 40
 

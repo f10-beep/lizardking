@@ -15,7 +15,7 @@ One composite device, pid.codes test ID `1209:0001`:
 |-----------|------|-----|
 | 0 | Xbox 360 XInput pad (interface 0 of the genuine pad) | the most widely supported gamepad |
 | 1 | HID keyboard + mouse + media keys | needs no driver, so it works at login and in UAC prompts |
-| 2–3 | CDC serial | console, plus the Arduino 1200-baud reset so `arduino-cli upload` / `make flash PORT=COMx` work |
+| 2–3 | CDC serial | the Guide's link and the console (`~b` reboots into the UF2 bootloader for `make flash`) |
 | 4 | Mass storage: read-only guide drive | carries the Windows Guide to any PC (see Guide drive) |
 
 - Windows' Xbox driver (`xusb22.inf`) only binds a composite interface
@@ -25,32 +25,69 @@ One composite device, pid.codes test ID `1209:0001`:
   would then read MS OS 2.0 instead of the 1.0 descriptor above.
 - A published build needs its own USB ID from pid.codes.
 
-## Boot and mode switching
+## Installing, pairing and boot
 
-- The puck always boots into LizardKing.
-- Back four + **A** reboots into Steam mode, which exists only for pairing:
-  Steam pairs a controller through the puck's own HID interface. Back four
-  + **B**, or the next reboot or replug, returns to LizardKing.
-- A **tap of all four back buttons** (a clean squeeze: all four down
-  within 150 ms of the first, from none held, in one layer; then all up,
-  nothing else pressed in between) cycles the Guide's mode when it is
-  running, and otherwise shows or hides the guide drive; a bump on both
-  pads confirms.
-  It fires on release, so it never collides with the mode chords.
-  Back four + **Start** asks the Guide to install itself; Start doesn't
-  reach the PC while the back buttons are held. Best done with the thumbs
-  off the pads: in the mouse and keyboard layers the back buttons are
-  Shift / Ctrl / Win / Alt.
-- In those layers all four together would be Windows' Office key (it opens
-  the Microsoft 365 / Copilot app), so the first back button's modifier
-  waits up to 150 ms for the rest. All four: the gesture, and no modifier
-  reaches Windows. Anything else pressed, a back button let go, a layer
-  change, or the time running out sends the held modifiers at once, so
-  Shift + key still works at speed. They keep the layer they were pressed
-  in: Ctrl + Shift pressed with a thumb on a pad stay Ctrl + Shift after
-  it lifts, until let go. The gamepad layer gets no delay.
+- **One install path: copy a UF2 onto the bootloader drive.** Every
+  install, including reinstalling the same file, starts unpaired: the image
+  carries a 256-byte block (`.fresh_install`) that the install writes blank,
+  and the first boot after it wipes the internal file system (bonds and
+  settings) and stamps the block. `make flash` installs the same way: `~b`
+  reboots the puck into its UF2 bootloader and the file is copied onto the
+  drive. `make flash KEEP_BONDS=1` copies a dev UF2 that carries the block
+  already stamped, so the bonds survive.
+- The bootloader refuses UF2 writes to the file system itself (the 40 KB
+  below it is reserved for app data), hence the stamp. Stamping the image
+  works because a UF2 install records no app checksum. A serial DFU upload
+  (`arduino-cli upload`) records one, which the stamp then fails, leaving
+  the puck in its bootloader until the next UF2 install: don't use it.
+- **The bonds decide the boot.** With no bond the puck boots into Steam
+  mode, which exists only for pairing: plug the puck and the controller
+  into the PC and pair in Steam, as with Valve's puck. Pair every
+  controller in the same session; replug the puck and, with a bond, it
+  boots into LizardKing.
+- **Lost the controller? Reinstall.** Recovery is the install path; there
+  is no other mode switch.
 - Steam Input must be off for games that should see the Xbox pad directly
   (per game: Properties → Controller → Disable Steam Input).
+
+## The Guide button
+
+The controller's Steam button is the Guide button, and it sits a level
+above the rest: it reaches LizardKing before Windows.
+
+Only a press begun in the gamepad layer (no pad touched) opens anything.
+With a thumb on a pad the Guide button is a chord about to happen, where
+opening Big Picture or the Guide by accident is easy. Opening the Guide is
+a hands-off moment anyway: you stop to read.
+
+- **Tap** (released within 400 ms, nothing else pressed), gamepad layer:
+  Windows gets a normal Xbox Guide press, so Game Bar and the Steam
+  overlay still open, just on release.
+- **Medium press** (held past 400 ms, alone), gamepad layer: LizardKing's
+  own, and it acts the moment the hold passes 400 ms, so the Guide or the
+  drive appearing is the sign it worked; holding on changes nothing. With
+  the Guide running it opens the Guide; without it, it shows or hides the
+  guide drive. Never forwarded.
+- **While the Guide is up,** any Guide press that isn't a chord, short or
+  long, in any layer, puts it away.
+- With a thumb on a pad, and the Guide closed, a Guide press that isn't a
+  chord does nothing.
+- **Chords** (Guide held, then another button): LizardKing's only commands.
+  Neither button reaches Windows.
+
+| Chord | Does | Needs the Guide running |
+|-------|------|-------------------------|
+| Guide + right pad click | key map on / off | yes |
+| Guide + left pad click | key map up / down | yes |
+| Guide + Start | install the Guide | yes |
+| Guide + right stick click | gyro on / off (planned) | no |
+
+- A switch confirms on the pads: two bumps for on, one for off. Moving the
+  key map and asking to install bump once. A chord that needs the Guide,
+  pressed without it, bumps once and does nothing.
+- The back buttons are plain buttons: no gestures, no delay. In the mouse
+  and keyboard layers all four together send Ctrl + Shift + Alt + Win,
+  which Windows reads as the Office key.
 
 ## Layers
 
@@ -74,7 +111,8 @@ One composite device, pid.codes test ID `1209:0001`:
 | D-pad | D-pad | mouse: arrow keys |
 | LB / RB | LB / RB | Tab / Enter |
 | LT / RT (light pull) | LT / RT | Backspace / Space |
-| View / Menu / Steam | Start / Back / Guide | mouse: Menu key / Esc |
+| View / Menu | Start / Back | mouse: Menu key / Esc |
+| Steam | the Guide button (see above) | chords only |
 | L3 / R3 | L3 / R3 | mouse: middle click / Back button |
 | Left stick | left stick | mouse: up/down volume, left/right prev/next track |
 | QAM | Print Screen | mouse: play/pause |
@@ -110,10 +148,7 @@ can be held with the left hand while the right thumb drives the cursor.
 - Layout: `docs/KEYBOARD_LAYOUT.md`. Vowels on the left thumb, consonants
   on the right; numbers with the other thumb resting down; F-keys with it in
   the bottom outer corner; brackets with the thumbs spread outward.
-- Clicking both center zones together moves the key map overlay between
-  two thirds and one third of the screen height (a bump on press and on
-  release; both clicks stay inert until released). A single center click
-  still does nothing.
+- The center zones do nothing, alone or together.
 - Key clicks pulse for twice as long as mouse clicks (3,000 / 1,400 µs);
   0x81 has no gain setting.
 - Index fingers (mouse and keyboard layers): RT = Space, LT = Backspace
@@ -129,40 +164,46 @@ Framework 4.x that ships with Windows 10/11, so it needs nothing installed.
 The name is the start of a rebrand; the firmware, USB device and repo are
 still LizardKing.
 
-Three modes, cycled by a tap of the four back buttons, each announced by a
-brief word in the middle of the screen:
+The Guide teaches the chords; the chords are the only interface. Nothing on
+screen is clickable: every window is click-through. Two independent
+switches, both on the Guide button:
 
-- **Guide:** a large click-through window. No pad and one pad on the left;
-  both pads on the right, with the live key map under it. Each panel draws
-  the controller with every button labelled for that layer; the layer the
-  thumbs select is outlined and the others fade. The outlined panel
-  responds live: pressed buttons fill and their labels light up, stick caps
-  move in their rings, triggers fill as they are pulled, and a dot follows
-  each thumb on its pad. The faded panels stay still, and the key map shows
-  its keys only while both thumbs are down. "Back 4: switch mode" sits
-  in the corner, and until the Guide is installed "Back 4 + Start to
-  install" sits top center.
-  While it is up the Guide is a practice space: the controller's buttons,
-  wheel and keys go to the Guide only, never to the apps behind it (the
-  puck sends the PC "nothing pressed"); only the cursor still moves, so it
-  can be moved off whatever it covers. A key, click or wheel turn from
-  another keyboard or mouse puts the Guide away (Key map mode); the
-  controller's own buttons, Esc included, never do. "Back 4: switch mode"
-  is a solid button in the corner, so the way out is hard to miss.
+- **The Guide** (medium press on, any Guide press off): a large window.
+  No pad and one pad on the left; both pads on the right, with the live
+  key map under it. Each panel draws the controller with every button
+  labelled for that layer; the layer the thumbs select is outlined and the
+  others fade. The outlined panel responds live: pressed buttons fill and
+  their labels light up, stick caps move in their rings, triggers fill as
+  they are pulled, and a dot follows each thumb on its pad. The faded
+  panels stay still, and the key map shows its keys only while both thumbs
+  are down. A cheat sheet lists the Guide button's gestures and chords;
+  each says what it will do now ("hide key map", "key map up"), and lights
+  up when it is used. The Guide button is labelled in the gamepad panel
+  only, the one layer where it does more than chords.
+  While it is up the Guide is a practice space: nothing from the
+  controller reaches the apps behind it, cursor included (the puck sends
+  the PC "nothing pressed"). The Guide parks the cursor in a screen corner
+  while it is up and puts it back when it goes away. A key, click or wheel
+  turn from another keyboard or mouse also puts it away, as a safety net.
   Switching layers, the panel entered lights up at once and the one left
   fades back over 80 ms, which takes the edge off quick switches.
-- **Key map:** only the keyboard overlay, in a small titled panel, shown
-  while both thumbs are on the pads: both pads' 3x3 grids for wherever the
-  other thumb rests, each thumb's zone highlighted. Small faded glyphs
-  around each key show what it becomes if the other thumb steps one zone
-  that way; new glyphs grow out of their hints (60 ms); the zone a thumb
-  leaves fades back over 80 ms while the one entered lights at once;
-  letters show lower
-  case and Shift shows shifted forms; a typed key's cell flashes and fades
-  over 75 ms. Both pad centers clicked together move it between one and
-  two thirds of the screen height; its title bar says so. Each pad's grid
-  has rounded outer corners, like the pad itself.
-- **Hidden:** nothing on screen.
+- **The key map** (Guide + right pad click): the keyboard overlay alone, in
+  a small titled panel, shown while the Guide is down and both thumbs are
+  on the pads: both pads' 3x3 grids for wherever the other thumb rests,
+  each thumb's zone highlighted. Small faded glyphs around each key show
+  what it becomes if the other thumb steps one zone that way; new glyphs
+  grow out of their hints (60 ms); the zone a thumb leaves fades back over
+  80 ms while the one entered lights at once; letters show lower case and
+  Shift shows shifted forms; a typed key's cell flashes and fades over
+  75 ms. Guide + left pad click moves it between one and two thirds of the
+  screen height. Both key map chords, used with the Guide closed, are
+  announced with a brief word in the middle of the screen ("Key map off",
+  "Key map top"). Each pad's grid has rounded outer corners, like the pad
+  itself.
+
+The puck owns both switches and the key map position (in RAM, so a reboot
+starts with the key map on and low); the Guide follows what the puck
+reports.
 
 How it works:
 
@@ -174,8 +215,9 @@ How it works:
 - It reads the puck's serial port. The key table comes from the firmware
   (`~m`), so it always matches what's flashed. `KS layer zoneR zoneL
   shift` arrives whenever the layer, a thumb's zone or Shift changes; `KK
-  pad zone` for every typed key; `KG` on a back 4 tap; `KI` on back 4 +
-  Start; `KT connected battery charge signal` about once a second; `KB
+  pad zone` for every typed key; `KG` on a Guide on/off press; `KI` on
+  Guide + Start; `KT connected battery charge signal keymap low` about once
+  a second and at once when the key map is switched or moved; `KB
   buttons lt rt lx ly rx ry lpx lpy rpx rpy` for the live
   drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, sent
   on a change at most every 8 ms). The button labels themselves are
@@ -190,22 +232,19 @@ How it works:
 - The Guide and the key map share one title bar (same code, same look):
   title, then a status chip with the controller's battery (a bolt while
   charging, amber at 15% and below) and signal bars, or "Controller
-  asleep"; a middle slot (the install prompt until installed, or the key
-  map's "Both centers: move"); and the solid "Back 4: switch mode" button
-  on the right. The tray tooltip gives the status in words.
+  asleep"; and a middle slot with the install chord until installed.
 - Practice mode is held by a heartbeat: every 250 ms the Guide's window
   thread asks for the input (`~g`), and the puck keeps it from the PC only
   while those keep coming (at most a second apart) and the port is open,
   so a Guide that hangs, crashes or closes hands the controller back on
-  its own. Leaving Guide mode sends `~h` to hand it back at once.
-- A tray icon shows the connection and offers the three modes, Move key
-  map, Install or Start when I sign in and Uninstall, and Exit.
+  its own. Putting the Guide away sends `~h` to hand it back at once.
+- The tray icon is a signpost, not a second interface: its tooltip gives
+  the status and "Hold the Guide button to open the Guide", and clicking
+  it shows the same hint as a notification. Its menu holds only what has
+  no chord: Uninstall (when installed) and Quit.
 - One instance at a time: a newly started copy (an update, a dev build)
   asks the running one to quit and takes over the serial port. `--demo`
-  cycles fake states without a puck and runs alongside a real copy;
-  `--mode guide|keymap|hidden` picks the starting mode.
-- Only one program can hold the serial port, so quit the Guide (tray >
-  Exit) before flashing over serial.
+  cycles fake states without a puck and runs alongside a real copy.
 
 ## Guide drive
 
@@ -214,17 +253,18 @@ around any of Windows' safeguards:
 
 - The puck is also a USB drive (interface 4) that reports "no disk", like a
   card reader without a card; Windows hides empty drives by default.
-- A tap of the four back buttons, with no Guide running, shows a read-only
-  volume, `LIZARDKING`, with `LizardKing Guide.exe` and a short
-  `README.txt`. The same tap hides it again, and unplugging the puck resets
-  it to hidden. No PC is ever shown the drive uninvited.
+- A medium press of the Guide button, with no Guide running, shows a
+  read-only volume, `LIZARDKING`, with `LizardKing Guide.exe` and a short
+  `README.txt`. The same press hides it again; the Guide connecting or the
+  puck being unplugged hides it too. No PC is ever shown the drive
+  uninvited.
 - Nothing runs by itself and nothing is installed unless asked. Started
   from the drive, the Guide copies itself to a temporary folder and runs
-  from there (the drive can be hidden while it is open), in Guide mode.
-  Back 4 + Start, or the tray icon, asks to install for this Windows user:
-  a copy in `%LOCALAPPDATA%\Programs\LizardKing` and an ordinary startup
-  entry in `HKCU\...\Run`, visible in Settings > Apps > Startup. Nothing
-  needs admin rights. Uninstall from the tray icon removes both.
+  from there, with the Guide up. Guide + Start asks to install for this
+  Windows user: a copy in `%LOCALAPPDATA%\Programs\LizardKing` and an
+  ordinary startup entry in `HKCU\...\Run`, visible in Settings > Apps >
+  Startup. Nothing needs admin rights. Uninstall from the tray icon
+  removes both.
 - The volume is synthesized on the fly (`LizardKing/eliz_drive.cpp`): a FAT12
   boot sector, FAT and root directory computed from the README and the exe
   embedded at build time as `LizardKing/guide_exe.h` (generated with `xxd`,
@@ -349,8 +389,10 @@ What did not work, so it isn't tried again:
 | `~s side script gain_db` | 0x85 HAPTIC_SCRIPT |
 | `~k setting value` | SET_SETTINGS_VALUES |
 | `~r` | toggles a one-line-per-report trace of the trackball |
+| `~w` | toggles a trace of the scroll wheel: `W` per report, and `WS units hires=0/1` per wheel report sent (1/120 notches while the host enabled the multiplier) |
 | `~m` | dumps the keyboard key table (`KM` lines) |
 | `~d` | shows / hides the guide drive |
+| `~b` | reboots into the UF2 bootloader (`make flash`) |
 | `~g` | Guide practice mode: hold the host's input for another second |
 | `~h` | Guide practice mode over: hand the input back now |
 

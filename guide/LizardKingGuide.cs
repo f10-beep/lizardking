@@ -1,29 +1,33 @@
 // LizardKing Guide for Windows (.NET Framework 4.x, which ships with Windows
 // 10/11, so it runs without installing anything).
 //
-// Three modes, cycled with a tap of the controller's four back buttons:
+// The Guide teaches the controller; the controller's Guide button and its
+// chords are the only interface, and nothing on screen is clickable. Two
+// switches:
 //   Guide    a window showing the controller three times (no pad, one pad,
-//            both pads touched) with every button labelled, plus the key
-//            map; the layer your thumbs select lights up as you use it.
-//   Key map  only the keyboard overlay, shown while both thumbs are on the
-//            pads.
-//   Hidden   nothing on screen.
+//            both pads touched) with every button labelled, the key map,
+//            and the chords; the layer your thumbs select lights up as you
+//            use it. A medium press of the Guide button opens it, any
+//            Guide press closes it.
+//   Key map  the keyboard overlay, shown while the Guide is closed and both
+//            thumbs are on the pads (Guide + right pad click).
 //
 // While the Guide window is up it is a practice space: the puck sends the
-// PC only cursor movement, everything else goes to the Guide alone, held
-// by a heartbeat ("~g" every 250 ms from the window thread; "~h" hands the
-// controller back). A key, click or wheel turn from another keyboard or
-// mouse puts the Guide away.
+// PC nothing, everything goes to the Guide alone, held by a heartbeat ("~g"
+// every 250 ms from the window thread; "~h" hands the controller back). The
+// cursor is parked in a corner meanwhile. A key, click or wheel turn from
+// another keyboard or mouse puts the Guide away.
 //
 // It reads the puck's serial port. The key table comes from the firmware
 // ("~m" -> "KM" lines), so it always matches the flashed layout. "KS" lines
 // report the layer, both thumbs' zones and Shift; "KK pad zone" arrives for
-// every typed key; "KP" (both pad centers clicked) moves the key map; "KG"
-// (a back 4 tap) cycles the mode; "KI" (back 4 + Start) asks to install.
+// every typed key; "KT" carries the status and the key map switches, which
+// the puck owns; "KG" turns the Guide on or off; "KI" (Guide + Start) asks
+// to install.
 //
 // Started from the puck's drive it never installs by itself: it copies
 // itself to a temporary folder and runs from there until the user asks to
-// install (back 4 + Start, or the tray icon).
+// install (Guide + Start).
 //
 // Build: tools/guide/build.cmd. --demo cycles fake states without a puck.
 
@@ -65,8 +69,6 @@ namespace LizardKing
 		}
 	}
 
-	enum GuideMode { Guide, KeyMap, Hidden }
-
 	// live controller input ("KB"): buttons as the firmware's TB_* bits,
 	// triggers 0..31, sticks and pad positions -32..32 (y up)
 	struct InputState
@@ -80,12 +82,12 @@ namespace LizardKing
 		}
 	}
 
-	// controller status ("KT"): charge as in the controller's report 0x43
-	// (1 discharging, 2 charging, 4 charged, 0 unknown); signal in -dBm,
-	// 0 = no sample yet
+	// status ("KT"): charge as in the controller's report 0x43 (1
+	// discharging, 2 charging, 4 charged, 0 unknown); signal in -dBm, 0 = no
+	// sample yet; the key map switches, owned by the puck
 	struct CtlStatus
 	{
-		public bool Connected;
+		public bool Connected, KeymapOn, KeymapLow;
 		public int Battery, Charge, Rssi;
 
 		// 1..4 bars, 0 unknown
@@ -621,17 +623,17 @@ namespace LizardKing
 				inp.RPX = int.Parse(f[10]);
 				inp.RPY = int.Parse(f[11]);
 				app.Post(delegate { app.OnInput(inp); });
-			} else if (f[0] == "KT" && f.Length == 5) {
+			} else if (f[0] == "KT" && f.Length == 7) {
 				var st = new CtlStatus();
 				st.Connected = f[1] == "1";
 				st.Battery = int.Parse(f[2]);
 				st.Charge = int.Parse(f[3]);
 				st.Rssi = int.Parse(f[4]);
+				st.KeymapOn = f[5] == "1";
+				st.KeymapLow = f[6] == "1";
 				app.Post(delegate { app.OnStatus(st); });
-			} else if (f.Length == 1 && f[0] == "KP") {
-				app.Post(delegate { app.ToggleTop(); });
 			} else if (f.Length == 1 && f[0] == "KG") {
-				app.Post(delegate { app.NextMode(); });
+				app.Post(delegate { app.ToggleGuide(); });
 			} else if (f.Length == 1 && f[0] == "KI") {
 				app.Post(delegate { app.InstallChord(); });
 			}
@@ -709,6 +711,7 @@ namespace LizardKing
 			demoStatus.Battery = 72;
 			demoStatus.Charge = 1;
 			demoStatus.Rssi = 58;
+			demoStatus.KeymapOn = demoStatus.KeymapLow = true;
 			app.Post(delegate { app.OnStatus(demoStatus); });
 			var fake = new Thread(delegate() { FakeInput(app); });
 			fake.IsBackground = true;
@@ -818,14 +821,27 @@ namespace LizardKing
 		}
 	}
 
+	// One chord in a title bar's cheat sheet. Lit 0..1 while it fades after
+	// use; a prompt (the install chord until installed) is outlined.
+	struct Chord
+	{
+		public string Text;
+		public double Lit;
+		public bool Prompt;
+
+		public Chord(string text, double lit, bool prompt)
+		{
+			Text = text;
+			Lit = lit;
+			Prompt = prompt;
+		}
+	}
+
 	// The title bar shared by the Guide and the key map: title and status
-	// chip on the left, an optional middle item (the install prompt or a
-	// hint), and the solid "Back 4: switch mode" button on the right -- the
-	// way out, so nobody misses it.
+	// chip on the left, the chords that act on the window on the right.
 	static class TitleBar
 	{
 		public const int Height = 48;
-		public enum Middle { None, Hint, Prompt }
 
 		static readonly Font TitleFont = new Font("Segoe UI Semibold", 17f,
 							  GraphicsUnit.Pixel);
@@ -841,7 +857,7 @@ namespace LizardKing
 		};
 
 		public static void Paint(Graphics g, float width, string title,
-					 CtlStatus st, string middle, Middle kind)
+					 CtlStatus st, Chord[] chords)
 		{
 			g.SmoothingMode = SmoothingMode.AntiAlias;
 			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
@@ -852,38 +868,34 @@ namespace LizardKing
 					     new RectangleF(pad, 0, tw + 4, Height), Left);
 			StatusArt.Paint(g, st, pad + tw + 10, cy, Small);
 
-			const string modes = "Back 4: switch mode";
-			float mw = g.MeasureString(modes, Small).Width + 24;
-			var mr = new RectangleF(width - pad - mw, cy - 15, mw, 30);
-			using (var b = new SolidBrush(Theme.Accent))
-			using (var p = Shape.Round(mr, 7))
-				g.FillPath(b, p);
-			using (var b = new SolidBrush(Color.White))
-				g.DrawString(modes, Small, b, mr, Center);
-
-			if (kind == Middle.Hint) {
-				using (var b = new SolidBrush(Theme.Dim))
-					g.DrawString(middle, Small, b,
-						     new RectangleF(0, 0, width, Height),
-						     Center);
-			} else if (kind == Middle.Prompt) {
-				float w = g.MeasureString(middle, Small).Width + 28;
-				var r = new RectangleF((width - w) / 2, cy - 15, w, 30);
-				using (var b = new SolidBrush(Theme.AccentFill))
+			// right to left, so the first chord sits furthest left
+			float x = width - pad;
+			for (int i = chords.Length - 1; i >= 0; i--) {
+				var c = chords[i];
+				float w = g.MeasureString(c.Text, Small).Width + 24;
+				x -= w;
+				var r = new RectangleF(x, cy - 15, w, 30);
+				x -= 8;
+				Color fill = Theme.Mix(c.Prompt ? Theme.AccentFill : Theme.Cell,
+						       Theme.Accent, c.Lit);
+				using (var b = new SolidBrush(fill))
 				using (var p = Shape.Round(r, 7))
 					g.FillPath(b, p);
-				using (var pen = new Pen(Theme.Accent, 1.5f))
-				using (var p = Shape.Round(r, 7))
-					g.DrawPath(pen, p);
-				using (var b = new SolidBrush(Theme.Ink))
-					g.DrawString(middle, Small, b, r, Center);
+				if (c.Prompt) {
+					using (var pen = new Pen(Theme.Accent, 1.5f))
+					using (var p = Shape.Round(r, 7))
+						g.DrawPath(pen, p);
+				}
+				using (var b = new SolidBrush(Theme.Mix(Theme.Ink, Color.White,
+									c.Lit)))
+					g.DrawString(c.Text, Small, b, r, Center);
 			}
 		}
 	}
 
 	// The keyboard key map: both pads' 3x3 grids for the zone the other
-	// thumb rests in. Shown on its own as a small overlay (Key map mode),
-	// and painted into the Guide window's key map panel.
+	// thumb rests in. Shown on its own as a small overlay, and painted into
+	// the Guide window's key map panel.
 	class KeyOverlay : Form
 	{
 		public const int LayerKbd = 2, Zones = 9, Center = 4;
@@ -920,7 +932,7 @@ namespace LizardKing
 		int[,,] keymap;
 		PuckState state = new PuckState(0, Center, Center, false);
 		PuckState shown;
-		bool hasShown, top, allowed;
+		bool hasShown, low = true, allowed;
 		double animStart = -1;
 		int[] animDr = new int[2], animDc = new int[2];
 		bool[] animPad = new bool[2];
@@ -974,8 +986,7 @@ namespace LizardKing
 					 ControlStyles.OptimizedDoubleBuffer |
 					 ControlStyles.UserPaint,
 				 true);
-			top = Settings.LoadTop();
-			frames.Interval = 5;
+				frames.Interval = 5;
 			frames.Tick += delegate { FrameTick(); };
 			Place();
 		}
@@ -1017,7 +1028,8 @@ namespace LizardKing
 			}
 		}
 
-		// Key map mode: the overlay shows itself while both thumbs are down
+		// key map on and the Guide closed: the overlay shows itself while
+		// both thumbs are down
 		public bool Allowed
 		{
 			get { return allowed; }
@@ -1058,15 +1070,20 @@ namespace LizardKing
 			var s = Screen.PrimaryScreen.Bounds;
 			// centered on one or two thirds of the screen height: off
 			// the middle, where text is typed, without straying far
-			int y = (top ? s.Height : 2 * s.Height) / 3 - Height / 2;
+			int y = (low ? 2 * s.Height : s.Height) / 3 - Height / 2;
 			Location = new Point(s.X + (s.Width - Width) / 2, s.Y + y);
 		}
 
-		public void ToggleTop()
+		// the puck owns the position (Guide + left pad click)
+		public bool Low
 		{
-			top = !top;
-			Settings.SaveTop(top);
-			Place();
+			set {
+				if (value == low)
+					return;
+				low = value;
+				Place();
+				Invalidate();
+			}
 		}
 
 		public void OnKeymap(int[,,] km)
@@ -1172,7 +1189,9 @@ namespace LizardKing
 			if (keymap == null || state.Layer != LayerKbd)
 				return;
 			TitleBar.Paint(g, ClientSize.Width, "Key map", status,
-				       "Both centers: move", TitleBar.Middle.Hint);
+				       new[] { new Chord(low ? "Guide + left pad: move up" :
+							       "Guide + left pad: move down",
+							 0, false) });
 			g.TranslateTransform(0, HeaderH);
 			PaintKeys(g, true, true);
 		}
@@ -1680,7 +1699,7 @@ namespace LizardKing
 				{ "ls", "Stick · L3" }, { "l4", "B" }, { "l5", "Y" },
 				{ "rt", "RT" }, { "rb", "RB" }, { "face", "Y|X|B|A" },
 				{ "rs", "Stick · R3" }, { "r4", "A" }, { "r5", "X" },
-				{ "back", "Back" }, { "xbox", "Xbox" },
+				{ "back", "Back" }, { "xbox", "Guide" },
 				{ "start", "Start" }, { "qam", "Print Screen" },
 			},
 			Desk("Play / pause", "Vol · track\nClick: middle",
@@ -1729,7 +1748,8 @@ namespace LizardKing
 						GraphicsUnit.Pixel);
 		PuckState state;
 		InputState input;
-		bool installed, dirty;
+		readonly bool installed;
+		bool dirty;
 		readonly System.Windows.Forms.Timer frames =
 			new System.Windows.Forms.Timer();
 
@@ -1737,7 +1757,7 @@ namespace LizardKing
 		{
 			frames.Interval = 16;
 			frames.Tick += delegate {
-				if ((dirty || Fading) && Opacity > 0)
+				if ((dirty || Fading || Lighting) && Opacity > 0)
 					Invalidate();
 				dirty = false;
 			};
@@ -1783,14 +1803,6 @@ namespace LizardKing
 		{
 			base.OnSizeChanged(e);
 			Region = Shape.WindowRegion(Size);
-		}
-
-		public bool Installed
-		{
-			set {
-				installed = value;
-				Invalidate();
-			}
 		}
 
 		public void OnInput(InputState inp)
@@ -1898,11 +1910,52 @@ namespace LizardKing
 
 		void PaintHeader(Graphics g)
 		{
-			// until installed, the next step sits in the middle
+			var chords = new List<Chord> {
+				new Chord("Guide: close", 0, false),
+				// each says what it will do now
+				new Chord(status.KeymapOn ? "Guide + right pad: hide key map" :
+							    "Guide + right pad: show key map",
+					  LitLevel(ChordKeymap), false),
+				new Chord(status.KeymapLow ? "Guide + left pad: key map up" :
+							     "Guide + left pad: key map down",
+					  LitLevel(ChordMove), false),
+			};
+			// until installed, the next step is outlined
+			if (!installed)
+				chords.Add(new Chord("Guide + Start: install",
+						     LitLevel(ChordInstall), true));
 			TitleBar.Paint(g, ClientSize.Width, "LizardKing Guide", status,
-				       "Back 4 + Start to install",
-				       installed ? TitleBar.Middle.None :
-						   TitleBar.Middle.Prompt);
+				       chords.ToArray());
+		}
+
+		// A chord's chip lights up when the puck reports its effect, then
+		// fades over LitMs.
+		public const int ChordKeymap = 0, ChordMove = 1, ChordInstall = 2;
+		const double LitMs = 600;
+		readonly Stopwatch clock = Stopwatch.StartNew();
+		readonly double[] litAt = { -LitMs, -LitMs, -LitMs };
+
+		public void Light(int chord)
+		{
+			litAt[chord] = clock.Elapsed.TotalMilliseconds;
+			dirty = true;
+		}
+
+		double LitLevel(int chord)
+		{
+			double t = (clock.Elapsed.TotalMilliseconds - litAt[chord]) / LitMs;
+			return t >= 1 ? 0 : (1 - t) * (1 - t);
+		}
+
+		bool Lighting
+		{
+			get {
+				foreach (int c in new[] { ChordKeymap, ChordMove,
+							  ChordInstall })
+					if (LitLevel(c) > 0)
+						return true;
+				return false;
+			}
 		}
 
 		static GraphicsPath Rounded(RectangleF r, float rad)
@@ -2087,7 +2140,8 @@ namespace LizardKing
 		}
 	}
 
-	// A brief word in the middle of the screen when the mode changes
+	// A brief word in the middle of the screen when a key map chord is used
+	// with the Guide closed
 	class Toast : Form
 	{
 		readonly System.Windows.Forms.Timer hide =
@@ -2164,63 +2218,6 @@ namespace LizardKing
 		}
 	}
 
-	static class Settings
-	{
-		static string Dir
-		{
-			get {
-				return Path.Combine(
-					Environment.GetFolderPath(
-						Environment.SpecialFolder.ApplicationData),
-					"LizardKing");
-			}
-		}
-
-		static string Read(string name)
-		{
-			try {
-				return File.ReadAllText(Path.Combine(Dir, name)).Trim();
-			} catch (Exception) {
-				return null;
-			}
-		}
-
-		static void Save(string name, string value)
-		{
-			try {
-				Directory.CreateDirectory(Dir);
-				File.WriteAllText(Path.Combine(Dir, name), value);
-			} catch (Exception) {
-			}
-		}
-
-		public static bool LoadTop()
-		{
-			return Read("keymap-position.txt") == "top";
-		}
-
-		public static void SaveTop(bool top)
-		{
-			Save("keymap-position.txt", top ? "top" : "bottom");
-		}
-
-		public static GuideMode LoadMode()
-		{
-			string m = Read("mode.txt");
-			if (m == "guide")
-				return GuideMode.Guide;
-			// "silent" is the mode's earlier name
-			return m == "hidden" || m == "silent" ? GuideMode.Hidden :
-								GuideMode.KeyMap;
-		}
-
-		public static void SaveMode(GuideMode m)
-		{
-			Save("mode.txt", m == GuideMode.Guide ? "guide" :
-					 m == GuideMode.Hidden ? "hidden" : "keymap");
-		}
-	}
-
 	// Per-user install: a copy in %LOCALAPPDATA%\Programs\LizardKing and an
 	// ordinary HKCU Run entry, both visible in Settings > Apps > Startup and
 	// removed by Uninstall. Nothing needs admin rights.
@@ -2258,19 +2255,13 @@ namespace LizardKing
 			}
 		}
 
-		public static bool StartsAtSignIn
+		public static void StartAtSignIn(bool on)
 		{
-			get {
-				using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
-					return k != null && k.GetValue(RunName) != null;
-			}
-			set {
-				using (var k = Registry.CurrentUser.CreateSubKey(RunKey)) {
-					if (value)
-						k.SetValue(RunName, "\"" + Exe + "\"");
-					else
-						k.DeleteValue(RunName, false);
-				}
+			using (var k = Registry.CurrentUser.CreateSubKey(RunKey)) {
+				if (on)
+					k.SetValue(RunName, "\"" + Exe + "\"");
+				else
+					k.DeleteValue(RunName, false);
 			}
 		}
 
@@ -2288,7 +2279,7 @@ namespace LizardKing
 
 		public static void Uninstall()
 		{
-			StartsAtSignIn = false;
+			StartAtSignIn(false);
 			// the running exe can't delete itself: a short-lived cmd
 			// removes the folder once this process has exited
 			var psi = new ProcessStartInfo("cmd.exe",
@@ -2299,7 +2290,8 @@ namespace LizardKing
 		}
 	}
 
-	// Owns the windows and the mode; everything here runs on the UI thread.
+	// Owns the windows and the two switches; everything here runs on the UI
+	// thread.
 	class App
 	{
 		public readonly KeyOverlay Keys = new KeyOverlay();
@@ -2308,38 +2300,37 @@ namespace LizardKing
 		readonly bool installed;
 		readonly System.Windows.Forms.Timer beats =
 			new System.Windows.Forms.Timer();
-		GuideMode mode;
+		bool guideUp;
+		// the key map switches as last reported, once there is a report
+		bool hasSwitches;
+		CtlStatus last;
+		// where the cursor was before the Guide parked it
+		Point cursor;
 
 		// the serial link, once started (none in --demo)
 		public PuckLink Link;
 
 		public event Action<string> StatusChanged;
-		public event Action ModeChanged;
 
-		public App(GuideMode start, bool installed)
+		public App(bool guideUp, bool installed)
 		{
 			this.installed = installed;
+			this.guideUp = guideUp;
 			guide = new GuideWindow(Keys, installed);
-			mode = start;
-			// the Guide covers the screen: reaching for another keyboard
-			// or mouse puts it away (back 4 brings it back)
+			// reaching for another keyboard or mouse puts the Guide away,
+			// a safety net beside the Guide button
 			Keys.Dismiss += delegate {
-				if (mode == GuideMode.Guide)
-					SetMode(GuideMode.KeyMap);
+				if (this.guideUp)
+					ToggleGuide();
 			};
 			// practice mode: while the Guide is up the controller's input
 			// goes to it, not to the apps behind it
 			beats.Interval = 250;
 			beats.Tick += delegate {
-				if (mode == GuideMode.Guide && Link != null)
+				if (this.guideUp && Link != null)
 					Link.Beat();
 			};
 			beats.Start();
-		}
-
-		public GuideMode Mode
-		{
-			get { return mode; }
 		}
 
 		public bool Installed
@@ -2351,6 +2342,8 @@ namespace LizardKing
 		{
 			guide.Show();
 			toast.Show();
+			if (guideUp)
+				Park();
 			Apply();
 		}
 
@@ -2366,37 +2359,41 @@ namespace LizardKing
 
 		void Apply()
 		{
-			Keys.Allowed = mode == GuideMode.KeyMap;
-			guide.Opacity = mode == GuideMode.Guide ? 0.995 : 0;
+			Keys.Allowed = !guideUp && (!hasSwitches || last.KeymapOn);
+			guide.Opacity = guideUp ? 0.995 : 0;
 			if (Link != null) {
-				if (mode == GuideMode.Guide)
+				if (guideUp)
 					Link.Beat();
 				else
 					Link.Release();
 			}
-			if (mode == GuideMode.Guide)
+			if (guideUp)
 				guide.Invalidate();
-			if (ModeChanged != null)
-				ModeChanged();
 		}
 
-		public void SetMode(GuideMode m)
+		// The puck sends no cursor movement while the Guide is up, so the
+		// cursor would sit on top of it: park it in a corner, outside the
+		// window, and put it back afterwards.
+		void Park()
 		{
-			mode = m;
-			if (installed)
-				Settings.SaveMode(m);
+			cursor = Cursor.Position;
+			var s = Screen.PrimaryScreen.Bounds;
+			Cursor.Position = new Point(s.Right - 1, s.Bottom - 1);
+		}
+
+		public void ToggleGuide()
+		{
+			guideUp = !guideUp;
+			if (guideUp)
+				Park();
+			else
+				Cursor.Position = cursor;
 			Apply();
-			toast.Say(m == GuideMode.Guide ? "Guide" :
-				  m == GuideMode.KeyMap ? "Key map" : "Hidden");
-		}
-
-		public void NextMode()
-		{
-			SetMode((GuideMode)(((int)mode + 1) % 3));
 		}
 
 		public void InstallChord()
 		{
+			guide.Light(GuideWindow.ChordInstall);
 			if (installed)
 				toast.Say("Installed");
 			else
@@ -2440,15 +2437,25 @@ namespace LizardKing
 
 		public void OnStatus(CtlStatus st)
 		{
+			if (hasSwitches && st.KeymapOn != last.KeymapOn) {
+				guide.Light(GuideWindow.ChordKeymap);
+				if (!guideUp)
+					toast.Say(st.KeymapOn ? "Key map on" : "Key map off");
+			}
+			if (hasSwitches && st.KeymapLow != last.KeymapLow) {
+				guide.Light(GuideWindow.ChordMove);
+				if (!guideUp)
+					toast.Say(st.KeymapLow ? "Key map bottom" :
+								 "Key map top");
+			}
+			hasSwitches = true;
+			last = st;
+			Keys.Low = st.KeymapLow;
+			Keys.Allowed = !guideUp && st.KeymapOn;
 			guide.OnStatus(st);
 			Keys.Status = st;
 			if (StatusChanged != null)
 				StatusChanged(st.Text);
-		}
-
-		public void ToggleTop()
-		{
-			Keys.ToggleTop();
 		}
 	}
 
@@ -2507,17 +2514,9 @@ namespace LizardKing
 				}
 			}
 			bool installed = Install.IsInstalledCopy;
-			// a newcomer (not installed, or just installed) starts in
-			// the Guide; an installed copy resumes the last mode
-			GuideMode start = installed && !fresh ? Settings.LoadMode() :
-							       GuideMode.Guide;
-			// for testing: --mode guide|keymap|hidden
-			int mi = Array.IndexOf(args, "--mode");
-			if (mi >= 0 && mi + 1 < args.Length)
-				start = args[mi + 1] == "keymap" ? GuideMode.KeyMap :
-					args[mi + 1] == "hidden" ? GuideMode.Hidden :
-								   GuideMode.Guide;
-			Run(demo, quit, installed, start, fresh);
+			// opened by hand (from the drive, or just installed) it starts
+			// with the Guide up; started at sign-in, closed
+			Run(demo, quit, installed, !installed || fresh);
 			mutex.ReleaseMutex();
 			return 0;
 		}
@@ -2537,10 +2536,9 @@ namespace LizardKing
 			var r = MessageBox.Show(
 				"Install the LizardKing Guide for this Windows user?\n\n" +
 				"It is copied to your user folder and starts when you " +
-				"sign in. Tap the four back buttons to switch between " +
-				"the guide, the key map and hidden. Remove it any time " +
-				"from its tray icon (Uninstall) or turn it off in " +
-				"Settings > Apps > Startup.",
+				"sign in. Hold the Guide button to open the Guide. " +
+				"Remove it any time from its tray icon (Uninstall) or " +
+				"turn it off in Settings > Apps > Startup.",
 				"LizardKing Guide", MessageBoxButtons.OKCancel,
 				MessageBoxIcon.Question, MessageBoxDefaultButton.Button1,
 				MessageBoxOptions.DefaultDesktopOnly);
@@ -2548,7 +2546,7 @@ namespace LizardKing
 				return;
 			try {
 				Install.CopyTo(Install.Exe);
-				Install.StartsAtSignIn = true;
+				Install.StartAtSignIn(true);
 				// the installed copy takes over from this one
 				Process.Start(Install.Exe, "--installed");
 			} catch (Exception ex) {
@@ -2561,19 +2559,24 @@ namespace LizardKing
 		}
 
 		static void Run(bool demo, EventWaitHandle quit, bool installed,
-				GuideMode start, bool fresh)
+				bool guideUp)
 		{
-			var app = new App(start, installed);
+			var app = new App(guideUp, installed);
 			var tray = new NotifyIcon();
 			tray.Icon = MakeIcon();
-			tray.Text = "LizardKing Guide";
 			tray.ContextMenuStrip = Menu(app, tray);
+			tray.Text = Tip("Waiting for the puck");
+			// the tray is a signpost to the Guide button, not a second
+			// way in
+			tray.MouseClick += delegate(object o, MouseEventArgs e) {
+				if (e.Button == MouseButtons.Left)
+					tray.ShowBalloonTip(5000, "LizardKing Guide", Hint,
+							    ToolTipIcon.Info);
+			};
 			tray.Visible = true;
 
 			app.Keys.Shown += delegate {
 				app.ShowWindows();
-				if (fresh)
-					app.SetMode(GuideMode.Guide);
 				if (demo) {
 					Demo.Start(app);
 				} else {
@@ -2592,30 +2595,24 @@ namespace LizardKing
 			tray.Dispose();
 		}
 
+		const string Hint = "Hold the Guide button to open the Guide.";
+
+		// NotifyIcon refuses a tooltip of 64 characters or more
+		static string Tip(string status)
+		{
+			string t = status + "\n" + Hint;
+			return t.Length < 64 ? t : t.Substring(0, 63);
+		}
+
+		// only what has no chord: Uninstall and Quit
 		static ContextMenuStrip Menu(App app, NotifyIcon tray)
 		{
 			var m = new ContextMenuStrip();
-			var title = new ToolStripMenuItem("LizardKing Guide");
-			title.Enabled = false;
 			var status = new ToolStripMenuItem("Waiting for the puck");
 			status.Enabled = false;
 			app.StatusChanged += delegate(string s) {
 				status.Text = s;
-				tray.Text = "LizardKing Guide: " + s;
-			};
-			var guide = new ToolStripMenuItem("Guide");
-			guide.Click += delegate { app.SetMode(GuideMode.Guide); };
-			var keymap = new ToolStripMenuItem("Key map only");
-			keymap.Click += delegate { app.SetMode(GuideMode.KeyMap); };
-			var hidden = new ToolStripMenuItem("Hidden");
-			hidden.Click += delegate { app.SetMode(GuideMode.Hidden); };
-			var move = new ToolStripMenuItem("Move key map up / down");
-			move.Click += delegate { app.ToggleTop(); };
-			var install = new ToolStripMenuItem("Install for this user...");
-			install.Click += delegate { Program.InstallNow(); };
-			var startup = new ToolStripMenuItem("Start when I sign in");
-			startup.Click += delegate {
-				Install.StartsAtSignIn = !Install.StartsAtSignIn;
+				tray.Text = Tip(s);
 			};
 			var uninstall = new ToolStripMenuItem("Uninstall...");
 			uninstall.Click += delegate {
@@ -2629,20 +2626,11 @@ namespace LizardKing
 				Install.Uninstall();
 				Application.Exit();
 			};
-			var exit = new ToolStripMenuItem("Exit");
-			exit.Click += delegate { Application.Exit(); };
-			m.Opening += delegate {
-				guide.Checked = app.Mode == GuideMode.Guide;
-				keymap.Checked = app.Mode == GuideMode.KeyMap;
-				hidden.Checked = app.Mode == GuideMode.Hidden;
-				install.Visible = !app.Installed;
-				startup.Visible = uninstall.Visible = app.Installed;
-				startup.Checked = Install.StartsAtSignIn;
-			};
+			uninstall.Visible = app.Installed;
+			var quit = new ToolStripMenuItem("Quit");
+			quit.Click += delegate { Application.Exit(); };
 			m.Items.AddRange(new ToolStripItem[] {
-				title, status, new ToolStripSeparator(), guide, keymap,
-				hidden, new ToolStripSeparator(), move, install, startup,
-				uninstall, new ToolStripSeparator(), exit,
+				status, new ToolStripSeparator(), uninstall, quit,
 			});
 			return m;
 		}

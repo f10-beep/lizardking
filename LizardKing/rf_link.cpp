@@ -3553,22 +3553,6 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 								&g_in[g_curSlot]
 									 .gz);
 						}
-						// Mode-switch chord (all 4 back + face/dpad): don't leak the press to the host. g_in[g_curSlot].buttons stays
-						// intact so the chord detector still fires; per-mode builders mask the same bits while back-4 held.
-						if ((bb & CHORD_BACK4) ==
-						    CHORD_BACK4) {
-							((uint8_t *)rep)[2] &= ~(
-								uint8_t)(TB_A |
-									 TB_B |
-									 TB_X |
-									 TB_Y);
-							((uint8_t *)rep)[3] &= ~(
-								uint8_t)((TB_DDN |
-									  TB_DRT |
-									  TB_DLF |
-									  TB_DUP) >>
-									 8);
-						}
 						// Hand the report to the active controller. STREAM modes ignore it (they emit from task() reading
 						// g_in); PUSH modes (Xbox, puck/lizard) build + send their host report here.
 						if (g_active)
@@ -3690,40 +3674,6 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					}
 
 					idx += tlen + 2;
-				}
-				// Mode chord: back four + A reboots into Steam pairing,
-				// back four + B back into LizardKing. Debounced per slot:
-				// with several controllers the round-robin poll interleaves
-				// other slots' reports, which would reset a shared counter.
-				{
-					static uint8_t chWant[NSLOT] = {
-						0xFF, 0xFF, 0xFF, 0xFF
-					};
-					static uint8_t chCnt[NSLOT] = { 0, 0, 0,
-									0 };
-					uint32_t held = g_in[g_curSlot].buttons;
-					uint8_t want = 0xFF;
-					if ((held & CHORD_BACK4) == CHORD_BACK4) {
-						if (held & TB_A)
-							want = MODE_STEAM;
-						else if (held & TB_B)
-							want = MODE_ELIZ;
-					}
-					if (want != 0xFF &&
-					    want == chWant[g_curSlot]) {
-						if (++chCnt[g_curSlot] >= 12 &&
-						    want != g_usbMode &&
-						    modeValid(want) &&
-						    !USBDevice.suspended()) {
-							// clean detach + reboot into the new mode (releases any held
-							// input on the outgoing device -- see modeSwitchReboot)
-							modeSwitchReboot(want);
-						}
-					} else {
-						chWant[g_curSlot] = want;
-						chCnt[g_curSlot] =
-							(want != 0xFF) ? 1 : 0;
-					}
 				}
 				// compact stream for rf_controller_ui.py -- NON-BLOCKING: skip if CDC TX is backed up (a blocking
 				// Serial.print stalls the RF+USB loop -> jaggy input). One line/frame using the last record.

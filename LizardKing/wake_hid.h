@@ -9,9 +9,8 @@
 // rf_link.cpp; this interface only changes how the host classifies us. (A boot keyboard didn't enumerate on
 // Windows.)
 //
-// Added for every clean mode AND for puck mode on a normal boot: puck mode drops its CDC serial console by
-// default (freeing the endpoint this interface needs) so it too can wake Windows. The one-shot debug boot keeps
-// CDC and skips this interface (no endpoint room for both) -- see config.h (g_debugCdcThisBoot).
+// Added in Steam mode, which has no CDC serial console, so the endpoint this interface needs is free and the
+// puck can wake Windows there too.
 #pragma once
 
 #include <stdint.h>

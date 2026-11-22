@@ -1,8 +1,8 @@
 // config.h -- USB-presentation modes + persisted, runtime-tunable settings.
 //
 // One puck speaks the SAME RF protocol no matter which USB face it wears; only the USB enumeration and the
-// input-report mapping change. The active face is g_usbMode, persisted to flash (cfg.bin). Tunables here are
-// set over the CDC console (serial_console.cpp) and the WebUSB panel (webusb_config.cpp) and likewise persist.
+// input-report mapping change. The active face is g_usbMode, chosen at boot by whether the puck holds a
+// bond. Tunables here are set over the CDC console (serial_console.cpp) and persist in cfg.bin.
 #pragma once
 #include <stdint.h>
 
@@ -11,14 +11,6 @@
 // Functional bits (haptic reconnect block, buzz-clear re-init, rate stats) stay. -DOPK_LOG=1 for diagnostics.
 #ifndef OPK_LOG
 #define OPK_LOG 0
-#endif
-
-// Build-time FACTORY RESET (recovery build). 0 (default) = normal. -DOPK_FACTORY_RESET=1 wipes ALL persistent
-// storage (cfg.bin + bonds.bin) ONCE -- on the first boot after flashing -- then persists normally. A git-hash
-// tag file (written after the wipe) records that this build already reset, so subsequent boots skip it. Flashing
-// a DIFFERENT build re-triggers the one-time wipe. Re-pair the controller after the reset. See factoryResetOnce().
-#ifndef OPK_FACTORY_RESET
-#define OPK_FACTORY_RESET 0
 #endif
 
 // Optional GPIO trigger wired to the HOST motherboard's front-panel power-switch header: fires a
@@ -30,9 +22,9 @@
 #define OPK_PWR_SWITCH 0
 #endif
 
-// USB presentations (g_usbMode). The values are persisted, so they keep
-// their upstream numbers. LizardKing is the product; Steam mode exists for
-// pairing, which Steam performs through the puck's own HID interface.
+// USB presentations (g_usbMode), with upstream's numbers. LizardKing is the
+// product; Steam mode exists for pairing, which Steam performs through the
+// puck's own HID interface, so an unpaired puck boots into it.
 // MODE_LIZARD is Steam mode's keyboard/mouse fallback while Steam is closed.
 #define MODE_STEAM 0
 #define MODE_LIZARD 3
@@ -41,10 +33,6 @@
 static inline bool modeIsPuck(uint8_t m)
 {
 	return m == MODE_STEAM || m == MODE_LIZARD;
-}
-static inline bool modeValid(uint8_t m)
-{
-	return m == MODE_STEAM || m == MODE_ELIZ;
 }
 
 // ---- Emulated controller TYPES. Button-remap config (back paddles / QAM / A-B swap / trackpad haptics) is kept
@@ -63,7 +51,7 @@ static inline uint8_t etypeForMode(uint8_t m)
 	return ET_NONE;
 }
 
-extern uint8_t g_usbMode; // loaded from flash at boot
+extern uint8_t g_usbMode; // from the bonds, at boot
 
 // true for all non-puck presentations (cached !modeIsPuck(g_usbMode))
 extern bool g_xbox;
@@ -155,13 +143,6 @@ void cfgExtWrite(uint8_t index, uint8_t value);
 
 void loadCfg();
 void saveCfg();
-// FULL factory wipe: reformat the internal LittleFS, erasing cfg.bin (modes/tunables/chords) AND bonds.bin
-// (paired controller). Irreversible; the caller reboots so the next boot comes up on clean defaults and the
-// controller must be re-paired. Gated behind explicit confirmation at every call site.
-void factoryErase();
-// One-time factory reset for the -DOPK_FACTORY_RESET recovery build: wipe ONCE on the first boot after flashing
-// (tracked by a git-hash tag file so it doesn't wipe on every boot), then persist normally. buildTag = OPK_GIT_HASH.
-void factoryResetOnce(const char *buildTag);
-// Mode switch (chord / WebUI): persist mode if the toggle is on, else arm a one-shot so this reboot lands in
-// the new mode but the next cold boot returns to Steam. Either way saveCfg + caller reboots.
-void saveMode(uint8_t m);
+// First boot after a UF2 install: wipe the file system (bonds and settings).
+// Call after InternalFS.begin(), before anything is loaded.
+void wipeOnFreshInstall();

@@ -25,12 +25,12 @@ rings are single-producer (usbd) / single-consumer (loop).
 radio.cpp        nRF52 RADIO: channels, addresses, raw TX/RX
 rf_link.cpp      the controller protocol: discovery, bonding, the poll loop,
                  decoding input report 0x45 into g_in[slot] (triton.h),
-                 relaying host commands; the back four + A / B mode chord
+                 relaying host commands
    │
    ▼  g_active->onReport45(slot, …)          (controllers.h)
 mode_eliz.cpp    LizardKing: layers (gamepad / mouse / keyboard by pad
-                 touch), trackball cursor, scroll, keyboard zones, back-four
-                 gestures, the Guide's serial protocol
+                 touch), trackball cursor, scroll, keyboard zones, the Guide
+                 button and its chords, the Guide's serial protocol
    ├─ mode_xinput.cpp   XInput class driver, bond selection, rumble
    ├─ HID keyboard + mouse + consumer interface (in mode_eliz.cpp)
    └─ eliz_drive.cpp    the read-only guide drive (synthesized FAT12)
@@ -45,8 +45,8 @@ usb_app_drivers  custom class drivers and the vendor / string descriptor
 
 | File | What |
 |---|---|
-| `LizardKing.ino` | `setup()` presents USB for the boot's mode and arms the ~8 s watchdog; `loop()` pumps each subsystem |
-| `config.*` | persisted settings and the one-shot boot mode |
+| `LizardKing.ino` | `setup()` picks the mode from the bonds (none: Steam mode, to pair), presents USB and arms the ~8 s watchdog; `loop()` pumps each subsystem |
+| `config.*` | persisted settings |
 | `bonds.*`, `identity.*` | the four controller bond slots; the unit serial |
 | `haptics.*` | host→controller haptic and rumble relay |
 | `fault_diag.*` | reset classification, hang capture, flight recorder |
@@ -54,4 +54,5 @@ usb_app_drivers  custom class drivers and the vendor / string descriptor
 | `serial_console.*` | the CDC console (`~` commands for the Guide and debugging) |
 | `wake_hid.*`, `status_led.*`, `pwr_switch.*` | host wake, LED, optional ColdBoot |
 | `guide/` | the LizardKing Guide (C#, Windows) |
+| `tools/flash.ps1` | `make flash`: reboots the puck into its UF2 bootloader and copies the UF2 |
 | `tools/layout/` | the keyboard layout search |
