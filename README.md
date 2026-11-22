@@ -30,8 +30,9 @@ Steam Controller 2.
 
 ## Install
 
-1. Double-tap the board's reset button: a drive appears.
-2. Copy `LizardKing.uf2` onto it. The board restarts unpaired.
+1. Download `LizardKing.uf2` from the latest release.
+2. Double-tap the board's reset button: a drive appears. Copy the file onto
+   it. The board restarts unpaired.
 3. Plug the puck and the controller into the PC and, with Steam running,
    pair as you would with Valve's puck. Pair every controller you want now.
 4. Unplug the puck and plug it back in: it starts as LizardKing.

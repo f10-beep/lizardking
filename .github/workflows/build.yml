@@ -1,0 +1,42 @@
+name: Build
+
+on:
+  push:
+    branches: [main]
+    # a release: plain semver, as gen_version.sh embeds it
+    tags: ['[0-9]+.[0-9]+.[0-9]+']
+  pull_request:
+
+jobs:
+  build:
+    # the Guide, embedded in the firmware's drive, is compiled with the
+    # .NET Framework's own csc, which only Windows has
+    runs-on: windows-latest
+    permissions:
+      contents: write
+    defaults:
+      run:
+        shell: bash
+    env:
+      ADAFRUIT_INDEX: https://adafruit.github.io/arduino-board-index/package_adafruit_index.json
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # the version tag, for gen_version.sh
+          fetch-tags: true
+      - uses: arduino/setup-arduino-cli@v2
+      - name: Adafruit nRF52 core
+        run: |
+          arduino-cli core update-index --additional-urls "$ADAFRUIT_INDEX"
+          arduino-cli core install adafruit:nrf52@1.7.0 \
+            --additional-urls "$ADAFRUIT_INDEX"
+      - run: choco install make --no-progress -y
+      - run: make build
+      - uses: actions/upload-artifact@v4
+        with:
+          name: LizardKing-uf2
+          path: build/out/LizardKing.uf2
+      - if: startsWith(github.ref, 'refs/tags/')
+        uses: softprops/action-gh-release@v2
+        with:
+          files: build/out/LizardKing.uf2

@@ -125,6 +125,12 @@ make format   # apply kernel style
 (`pip install clang-format==18.1.8`, which the Makefile finds by itself).
 CI runs it on every push.
 
+CI also builds the firmware on Windows (the Guide needs the .NET Framework's
+`csc`) on every push to `main` and every pull request, and keeps the UF2 as
+an artifact. To release, tag the commit with a plain version and push the
+tag: `git tag 1.0.0 && git push origin 1.0.0`. CI then attaches
+`LizardKing.uf2` to a GitHub release, and the firmware reports that version.
+
 Generated headers are gitignored and never committed:
 `LizardKing/git_version.h` (from `gen_version.sh`) and `LizardKing/guide_exe.h`
 (the Guide exe embedded for the guide drive, built from `guide/` on Windows;

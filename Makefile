@@ -1,10 +1,13 @@
 # LizardKing build targets.
 
+# Windows installs often name it python, not python3
+PYTHON ?= $(shell command -v python3 || command -v python)
+
 # Pinned to clang-format 18: output differs between versions. Falls back to
 # the PyPI build (pip install clang-format==18.1.8), whose folder is often
 # not on the PATH.
 CLANG_FORMAT ?= $(shell command -v clang-format-18 || command -v clang-format || \
-	python3 -c "import clang_format, os; print(os.path.join(os.path.dirname(clang_format.__file__), 'data', 'bin', 'clang-format').replace(os.sep, '/'))" 2>/dev/null)
+	$(PYTHON) -c "import clang_format, os; print(os.path.join(os.path.dirname(clang_format.__file__), 'data', 'bin', 'clang-format').replace(os.sep, '/'))" 2>/dev/null)
 
 FORMAT_FILES := $(shell find LizardKing \
 	\( -name '*.c' -o -name '*.cpp' -o -name '*.h' -o -name '*.ino' \) \
@@ -71,7 +74,7 @@ format-check: need-clang-format
 	$(CLANG_FORMAT) --dry-run --Werror $(FORMAT_FILES)
 
 check: format-check
-	python3 tools/check-trailing-comments.py $(FORMAT_FILES)
+	$(PYTHON) tools/check-trailing-comments.py $(FORMAT_FILES)
 
 guide-header:
 ifeq ($(LIZARD_DRIVE)$(OS),1Windows_NT)
@@ -99,11 +102,11 @@ build: guide-header
 		$(SKETCH)
 	# copied first: the Microsoft Store Python can't read the Arduino data dir
 	cp "$(UF2CONV)" build/uf2conv.py
-	python3 build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_RELEASE) $(HEX)
+	$(PYTHON) build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_RELEASE) $(HEX)
 	head -c 256 /dev/zero > build/stamped.bin
 	"$(OBJCOPY)" -O ihex --update-section .fresh_install=build/stamped.bin \
 		$(ELF) build/dev.hex
-	python3 build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_DEV) build/dev.hex
+	$(PYTHON) build/uf2conv.py -f $(UF2_FAMILY) -c -o $(UF2_DEV) build/dev.hex
 
 # make flash KEEP_BONDS=1 keeps the puck's bonds (dev only)
 flash:

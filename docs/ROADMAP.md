@@ -33,8 +33,8 @@ pass.
 - **ColdBoot** (`pwr_switch`, compiled out by default): keep or drop.
 - **USB ID.** Get a pid.codes ID before publishing; `1209:0001` is the
   test ID.
-- **CI build.** CI checks formatting and the comment lint; add a firmware
-  build.
+- **First CI run.** The build workflow has only been checked locally (a
+  fresh-clone build); watch its first run on GitHub.
 
 ## Product
 
