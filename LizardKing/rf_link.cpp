@@ -1749,7 +1749,7 @@ static uint8_t rfChannelDecodedActivity(int slot, uint32_t buttons)
 		TB_A | TB_B | TB_X | TB_Y | TB_QAM | TB_R3 | TB_VIEW | TB_R4 |
 		TB_R5 | TB_RB | TB_DDN | TB_DRT | TB_DLF | TB_DUP | TB_MENU |
 		TB_L3 | TB_STEAM | TB_L4 | TB_L5 | TB_LB | TB_RPADC | TB_LPADC |
-		TB_R2 | TB_L2 | TB_TOUCH | TB_MUTE;
+		TB_R2 | TB_L2;
 	uint8_t activity = 0;
 	if (buttons & digitalMask)
 		activity |= RF_HOP_ACT_DIGITAL;

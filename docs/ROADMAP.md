@@ -25,8 +25,7 @@ pass.
 
 ## Product
 
-Launch features (in the first release): gyro aiming, and the stick-touch
-glitch fix it depends on.
+Launch feature (in the first release): gyro aiming.
 
 - **Gyro aiming** (launch), as mouse movement: active while the right thumb rests on
   the right stick (lift to ratchet), in the gamepad layer only. One binary
@@ -34,11 +33,6 @@ glitch fix it depends on.
   cycles, confirmed by two bumps for on and one for off, and shown in the
   Guide next to battery and signal. Try it in a shooter and in Elite
   (tilt to look) before settling.
-- **Stick-touch glitch** (launch). Touching a pad and the same side's stick drops to
-  the gamepad layer: the controller seems to stop reporting the pad touch
-  while the stick's capacitive sensor is touched (bits 0x00100000 right,
-  0x01000000 left stick). Capture what it reports, then keep the layer.
-  Gyro aiming depends on stick touch, so fix this first.
 - **Lift-off protection.** Lightening the fast-swipe smoothing (follow 30%)
   gave stronger flicks but slightly weaker lift-off protection; retune.
 - **Scroll momentum.** Tune the fling threshold and the coast by feel.
