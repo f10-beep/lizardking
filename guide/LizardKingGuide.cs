@@ -37,6 +37,7 @@ using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.Drawing.Imaging;
 using System.Drawing.Text;
 using System.IO;
 using System.IO.Ports;
@@ -368,6 +369,39 @@ namespace LizardKing
 								uint command,
 								StringBuilder data,
 								ref uint size);
+
+		[StructLayout(LayoutKind.Sequential)]
+		public struct Rect
+		{
+			public int Left, Top, Right, Bottom;
+		}
+
+		[DllImport("user32.dll")]
+		public static extern IntPtr GetForegroundWindow();
+		[DllImport("user32.dll")]
+		public static extern bool GetWindowRect(IntPtr window, out Rect r);
+		[DllImport("user32.dll", CharSet = CharSet.Unicode)]
+		public static extern int GetClassName(IntPtr window, StringBuilder name,
+						      int max);
+
+		// Whether a game is most likely in front: the foreground window
+		// fills its monitor, exclusive or borderless fullscreen, and isn't
+		// the desktop (Progman, or WorkerW behind the icons). The Guide and
+		// key map then go lean (see GuideWindow.Lean).
+		public static bool FullscreenInFront()
+		{
+			IntPtr w = GetForegroundWindow();
+			Rect r;
+			if (w == IntPtr.Zero || !GetWindowRect(w, out r))
+				return false;
+			var name = new StringBuilder(32);
+			GetClassName(w, name, name.Capacity);
+			if (name.ToString() == "Progman" || name.ToString() == "WorkerW")
+				return false;
+			var m = Screen.FromHandle(w).Bounds;
+			return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right &&
+			       r.Bottom >= m.Bottom;
+		}
 	}
 
 	// Lizard greens: olive-tinted darks, an anole-green accent, a lime
@@ -1074,6 +1108,9 @@ namespace LizardKing
 		};
 
 		int[,,] keymap;
+		// over a fullscreen game (decided as it, or the Guide, appears): no
+		// glyph growth, zone fades or key flashes
+		public bool Lean;
 		PuckState state = new PuckState(0, Center, Center, false);
 		PuckState shown;
 		bool hasShown, low = true, allowed;
@@ -1129,7 +1166,7 @@ namespace LizardKing
 					 ControlStyles.OptimizedDoubleBuffer |
 					 ControlStyles.UserPaint,
 				 true);
-				frames.Interval = 5;
+			frames.Interval = 16;
 			frames.Tick += delegate { FrameTick(); };
 			Place();
 		}
@@ -1192,6 +1229,8 @@ namespace LizardKing
 		void UpdateOpacity()
 		{
 			bool show = allowed && state.Layer == LayerKbd && keymap != null;
+			if (show && Opacity == 0)
+				Lean = Native.FullscreenInFront();
 			Opacity = show ? 0.92 : 0;
 		}
 
@@ -1298,7 +1337,9 @@ namespace LizardKing
 			// types.
 			bool any = false;
 			bool leaving = false;
-			if (st.Layer == LayerKbd && hadPrev && prev.Layer == LayerKbd) {
+			bool steps = !Lean && st.Layer == LayerKbd && hadPrev &&
+				     prev.Layer == LayerKbd;
+			if (steps) {
 				for (int pad = 0; pad < 2; pad++) {
 					int o = OwnZone(prev, pad);
 					if (o != OwnZone(st, pad)) {
@@ -1310,7 +1351,7 @@ namespace LizardKing
 			}
 			if (leaving)
 				frames.Start();
-			if (st.Layer == LayerKbd && hadPrev && prev.Layer == LayerKbd) {
+			if (steps) {
 				for (int pad = 0; pad < 2; pad++) {
 					int o = OtherZone(prev, pad), n = OtherZone(st, pad);
 					int dr = n / 3 - o / 3, dc = n % 3 - o % 3;
@@ -1330,7 +1371,7 @@ namespace LizardKing
 
 		public void OnPress(int pad, int zone)
 		{
-			if (pad < 0 || pad > 1 || zone < 0 || zone >= Zones)
+			if (pad < 0 || pad > 1 || zone < 0 || zone >= Zones || Lean)
 				return;
 			flashes[pad * Zones + zone] = clock.Elapsed.TotalMilliseconds;
 			frames.Start();
@@ -1945,18 +1986,21 @@ namespace LizardKing
 		PuckState state;
 		InputState input;
 		readonly bool installed;
-		bool dirty;
+		// input changed: the panel in use, and the other one when a button
+		// held across a layer change (lit there) changed
+		bool dirty, dirtyOther;
 		readonly System.Windows.Forms.Timer frames =
 			new System.Windows.Forms.Timer();
+		// the window edge, panels and scale texture, which never change:
+		// drawn once, copied under every repaint
+		Bitmap backdrop;
+
+		bool lean;
 
 		public GuideWindow(KeyOverlay keys, bool installed)
 		{
 			frames.Interval = 16;
-			frames.Tick += delegate {
-				if ((dirty || Fading || Lighting) && Opacity > 0)
-					Invalidate();
-				dirty = false;
-			};
+			frames.Tick += delegate { FrameTick(); };
 			frames.Start();
 			this.keys = keys;
 			this.installed = installed;
@@ -2003,8 +2047,35 @@ namespace LizardKing
 
 		public void OnInput(InputState inp)
 		{
+			int other = 1 - state.Layer;
+			if (inp.Own(other) != input.Own(other))
+				dirtyOther = true;
 			input = inp;
 			dirty = true;
+		}
+
+		void FrameTick()
+		{
+			if (Opacity > 0) {
+				if (dirty)
+					Invalidate(Panel(state.Layer));
+				if (dirtyOther || Fading)
+					Invalidate(Panel(1 - state.Layer));
+				if (Lighting)
+					Invalidate(new Rectangle(0, 0, ClientSize.Width,
+								 HeaderH));
+			}
+			dirty = dirtyOther = false;
+		}
+
+		// Lean, over a fullscreen game (decided as the Guide appears): 30
+		// fps without fades or chip glows, to leave the game the CPU
+		public bool Lean
+		{
+			set {
+				lean = value;
+				frames.Interval = value ? 33 : 16;
+			}
 		}
 
 		CtlStatus status;
@@ -2026,7 +2097,7 @@ namespace LizardKing
 		bool Fading
 		{
 			get {
-				return leaving >= 0 &&
+				return !lean && leaving >= 0 &&
 				       fade.Elapsed.TotalMilliseconds < LeaveMs;
 			}
 		}
@@ -2084,22 +2155,44 @@ namespace LizardKing
 		protected override void OnPaint(PaintEventArgs pe)
 		{
 			var g = pe.Graphics;
-			g.Clear(Theme.Bg);
+			if (backdrop == null || backdrop.Size != ClientSize)
+				backdrop = Backdrop();
+			g.CompositingMode = CompositingMode.SourceCopy;
+			g.DrawImageUnscaled(backdrop, 0, 0);
+			g.CompositingMode = CompositingMode.SourceOver;
 			g.SmoothingMode = SmoothingMode.AntiAlias;
 			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-			g.SmoothingMode = SmoothingMode.AntiAlias;
-			using (var pen = new Pen(Theme.Edge, 2))
-			using (var bp = Shape.Round(new RectangleF(1, 1,
-								  ClientSize.Width - 2,
-								  ClientSize.Height - 2),
-						    Shape.Window - 1))
-				g.DrawPath(pen, bp);
-			PaintHeader(g);
+			if (pe.ClipRectangle.Top < HeaderH)
+				PaintHeader(g);
 			string[] names = { "Controller", "Keyboard" };
 			for (int i = 0; i < 2; i++)
 				if (pe.ClipRectangle.IntersectsWith(Panel(i)))
 					PaintController(g, i, names[i]);
-			PaintKeyMap(g, KeyArea());
+			if (pe.ClipRectangle.IntersectsWith(KeyArea()))
+				PaintKeyMap(g, KeyArea());
+		}
+
+		Bitmap Backdrop()
+		{
+			var bmp = new Bitmap(ClientSize.Width, ClientSize.Height,
+					     PixelFormat.Format32bppPArgb);
+			using (var g = Graphics.FromImage(bmp)) {
+				g.Clear(Theme.Bg);
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				using (var pen = new Pen(Theme.Edge, 2))
+				using (var bp = Shape.Round(new RectangleF(1, 1,
+									  ClientSize.Width - 2,
+									  ClientSize.Height - 2),
+							    Shape.Window - 1))
+					g.DrawPath(pen, bp);
+				for (int i = 0; i < 2; i++)
+					using (var p = Rounded(Panel(i), 12)) {
+						using (var b = new SolidBrush(Theme.Panel))
+							g.FillPath(b, p);
+						Theme.Scales(g, p);
+					}
+			}
+			return bmp;
 		}
 
 		void PaintHeader(Graphics g)
@@ -2144,6 +2237,8 @@ namespace LizardKing
 
 		double LitLevel(int chord)
 		{
+			if (lean)
+				return 0;
 			double t = (clock.Elapsed.TotalMilliseconds - litAt[chord]) / LitMs;
 			return t >= 1 ? 0 : (1 - t) * (1 - t);
 		}
@@ -2174,10 +2269,8 @@ namespace LizardKing
 		void PaintFrame(Graphics g, Rectangle q, double level, string name)
 		{
 			double f = (level - Dim) / (1 - Dim);
+			// the fill and texture are in the backdrop
 			using (var p = Rounded(q, 12)) {
-				using (var b = new SolidBrush(Theme.Panel))
-					g.FillPath(b, p);
-				Theme.Scales(g, p);
 				using (var pen = new Pen(Theme.Mix(Theme.Edge, Theme.Accent,
 								   f),
 							 (float)(1.5 + 1.5 * f)))
@@ -2682,10 +2775,14 @@ namespace LizardKing
 		public void ToggleGuide()
 		{
 			guideUp = !guideUp;
-			if (guideUp)
+			if (guideUp) {
+				bool lean = Native.FullscreenInFront();
+				guide.Lean = lean;
+				Keys.Lean = lean;
 				Park();
-			else
+			} else {
 				Cursor.Position = cursor;
+			}
 			Apply();
 		}
 

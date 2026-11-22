@@ -263,6 +263,13 @@ switches, both on the Guide button:
   click on the tray icon.
   Switching layers, the panel entered lights up at once and the one left
   fades back over 80 ms, which takes the edge off quick switches.
+  It stays light over a game: the window edge, panels and texture are
+  drawn once and copied under each repaint, input repaints only the panel
+  it changes. When it or the key map appears over a fullscreen window
+  (exclusive or borderless, most likely a game), it goes lean, leaving the
+  game the CPU: the Guide at 30 fps without fades or chip glows, the key
+  map without its glyph growth, zone fades and key flashes. Over anything
+  else it's rich again.
 - **The key map** (Guide + left pad click: large, small, off): the
   keyboard overlay alone. Large is a titled panel,
   shown while the Guide is down and both thumbs are
