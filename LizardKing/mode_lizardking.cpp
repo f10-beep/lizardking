@@ -18,19 +18,22 @@ bool g_lkTrace;
 // ---- tunables (see docs/DESIGN.md) ----
 
 // a layer change must hold this long before buttons follow it
-#define LK_SWITCH_MS 30u
+// The feel constants (static int / float, in caps) are variables, not
+// #defines, so the console can set them live by name (~T, see lkTune) for
+// A/B tests without a reflash. Every boot starts from these values.
+static int LK_SWITCH_MS = 30;
 
 // Pad clicks come from pressure: the controller's own click bit needs
 // ~8900, which tires the thumb. ON/OFF give hysteresis like its own click.
-#define LK_CLICK_ON 3200
-#define LK_CLICK_OFF 2300
+static int LK_CLICK_ON = 3200;
+static int LK_CLICK_OFF = 2300;
 // With both thumbs on the pads (typing) clicks are lighter still: there is
 // no cursor for a stray click to disturb, and typing wants a light touch.
-#define LK_KEY_CLICK_ON 2400
-#define LK_KEY_CLICK_OFF 1700
+static int LK_KEY_CLICK_ON = 2400;
+static int LK_KEY_CLICK_OFF = 1700;
 
 // pad counts per cursor pixel
-#define LK_PX_DIV 160
+static int LK_PX_DIV = 160;
 
 // While touching, the cursor chases the thumb's absolute (1:1) position,
 // closing a fraction of the gap each report: all of it at thumb speeds up
@@ -39,10 +42,10 @@ bool g_lkTrace;
 // so it never drifts. The speed is smoothed by SPEED_ALPHA and starts from
 // the ball's speed when the thumb lands on a moving ball, so a tap's jitter
 // cannot fling it.
-#define LK_FOLLOW_SLOW 1.0f
-#define LK_FOLLOW_FAST 8.0f
-#define LK_FOLLOW_MIN 0.3f
-#define LK_SPEED_ALPHA 0.4f
+static float LK_FOLLOW_SLOW = 1.0f;
+static float LK_FOLLOW_FAST = 8.0f;
+static float LK_FOLLOW_MIN = 0.3f;
+static float LK_SPEED_ALPHA = 0.4f;
 // The pad refreshes the thumb position only every 2nd-3rd report and repeats
 // it in between, so the thumb speed is measured per new position: its travel
 // over the time since the previous new position, in px per nominal report
@@ -54,16 +57,16 @@ bool g_lkTrace;
 // On lift the ball keeps the cursor's velocity, smoothed by LAUNCH_ALPHA so
 // the twist at the end of a swipe does not decide the glide, and the rest
 // of the gap is dropped. Touching a moving ball stops it.
-#define LK_LAUNCH_ALPHA 0.35f
+static float LK_LAUNCH_ALPHA = 0.35f;
 
 // Free-spinning ball: exponential friction plus a small constant drag, so
 // slow spins end instead of crawling.
-#define LK_GLIDE_DECAY 0.9835f
-#define LK_GLIDE_DRAG 0.006f
-#define LK_GLIDE_MAX 40.0f
+static float LK_GLIDE_DECAY = 0.9835f;
+static float LK_GLIDE_DRAG = 0.006f;
+static float LK_GLIDE_MAX = 40.0f;
 // A touch that is not driving the cursor (keyboard layer) brakes the ball
 // like a resting finger instead of stopping it dead.
-#define LK_GHOST_DECAY 0.88f
+static float LK_GHOST_DECAY = 0.88f;
 
 // Pressure dead zone: the cursor ignores thumb travel within a radius that
 // is DEADZONE_PX at zero pressure (a feather touch, about to lift off),
@@ -72,9 +75,9 @@ bool g_lkTrace;
 // light lift-offs land where aimed. Beyond it the cursor is pulled along at
 // the edge, so drags still work. A radius never makes the cursor creep while
 // a click is held, which slowing the follow rate did.
-#define LK_DZ_START 400
-#define LK_DZ_FULL 2200
-#define LK_DEADZONE_PX 10.0f
+static int LK_DZ_START = 400;
+static int LK_DZ_FULL = 2200;
+static float LK_DEADZONE_PX = 10.0f;
 // Lift dead zone: a thumb rolling off drops pressure fast and its contact
 // point wobbles. Each pad count per report of pressure drop opens LIFT_GAIN
 // px of dead zone (up to LIFT_MAX), shrinking by LIFT_DECAY per report, so
@@ -82,10 +85,10 @@ bool g_lkTrace;
 // updates more slowly the wider it is (half as fast at LIFT_HOLD_PX), so a
 // flick ending in a lift keeps its launch and a settled lift has none,
 // while pressure wobble barely matters.
-#define LK_LIFT_GAIN 0.1f
-#define LK_LIFT_MAX 40.0f
-#define LK_LIFT_DECAY 0.8f
-#define LK_LIFT_HOLD_PX 2.0f
+static float LK_LIFT_GAIN = 0.1f;
+static float LK_LIFT_MAX = 40.0f;
+static float LK_LIFT_DECAY = 0.8f;
+static float LK_LIFT_HOLD_PX = 2.0f;
 
 // Circular scrolling on the left pad: one turn is SCROLL_REV notches,
 // clockwise scrolls down. Starting a scroll needs the thumb to turn past a
@@ -94,9 +97,9 @@ bool g_lkTrace;
 // angle wildly, so a click there never starts one, while the outer ring
 // starts at once. Once started it follows the thumb anywhere but the very
 // center (SCROLL_R_HOLD) until the thumb lifts.
-#define LK_SCROLL_REV 24.0f
-#define LK_SCROLL_R_IN 0.2f
-#define LK_SCROLL_R_OUT 0.65f
+static float LK_SCROLL_REV = 24.0f;
+static float LK_SCROLL_R_IN = 0.2f;
+static float LK_SCROLL_R_OUT = 0.65f;
 // Scroll momentum, like a free-spinning wheel, and built like the
 // trackball's: while the thumb turns the wheel its speed is kept up to date
 // (see wheelSpeed), and lifting the thumb at more than SCROLL_FLING notches
@@ -104,20 +107,20 @@ bool g_lkTrace;
 // until under SCROLL_STOP. A thumb back on the left pad catches it; slow
 // scrolling stops dead. A single reading more than SCROLL_OUTLIER times the
 // current speed (a junk position at the pad's edge) is capped.
-#define LK_SCROLL_OUTLIER 3.0f
+static float LK_SCROLL_OUTLIER = 3.0f;
 // Wheel reports at most every WHEEL_GAP_MS: fast scrolling goes out as fewer,
 // larger steps instead of a report every 4 ms, which some apps stutter on.
 // Slow scrolling looks the same (it never needs more often than this).
 #define LK_WHEEL_GAP_MS 16
 // Once a scroll is under way the thumb may drift inward without stopping it;
 // only this close to the center, where the angle is noise, does it pause.
-#define LK_SCROLL_R_HOLD 0.1f
-#define LK_SCROLL_FLING 0.12f
-#define LK_SCROLL_DECAY 0.996f
-#define LK_SCROLL_STOP 0.008f
+static float LK_SCROLL_R_HOLD = 0.1f;
+static float LK_SCROLL_FLING = 0.12f;
+static float LK_SCROLL_DECAY = 0.996f;
+static float LK_SCROLL_STOP = 0.008f;
 // a scroll texture tick every SCROLL_TICK notches, fine to match the
 // high-resolution wheel
-#define LK_SCROLL_TICK (2.0f / 3.0f)
+static float LK_SCROLL_TICK = (2.0f / 3.0f);
 // High-resolution wheel: once Windows sets the HID Resolution Multiplier,
 // wheel reports count 1/120 notch.
 #define LK_WHEEL_HIRES 120
@@ -128,11 +131,11 @@ bool g_lkTrace;
 // for a sharp pulse; a 0x83 tone is dull and can swallow the next click.
 // Pulse side 0 is the RIGHT pad.
 static const uint8_t PULSE_SIDE[2] = { 0, 1 }; // PAD_R, PAD_L
-#define LK_CLICK_ON_US 1500
-#define LK_RELEASE_ON_US 700
+static int LK_CLICK_ON_US = 1500;
+static int LK_RELEASE_ON_US = 700;
 // 0x81 has no gain, so key clicks are made stronger by doubling the on-time
-#define LK_KEY_ON_US 3000
-#define LK_KEY_RELEASE_ON_US 1400
+static int LK_KEY_ON_US = 3000;
+static int LK_KEY_RELEASE_ON_US = 1400;
 
 // Ticks use Triton OUTPUT 0x83 HAPTIC_LFO_TONE
 // [side][gain_db s8][freq u16][dur u16][lfo_freq u16][lfo_depth]: its gain
@@ -140,17 +143,17 @@ static const uint8_t PULSE_SIDE[2] = { 0, 1 }; // PAD_R, PAD_L
 // LEFT pad, the reverse of 0x81. A 20-unit tick is clearly felt at -24 dB
 // and barely at -36 dB.
 static const uint8_t TONE_SIDE[2] = { 1, 0 }; // PAD_R, PAD_L
-#define LK_TONE_HZ 200
-#define LK_TICK_DB -24
-#define LK_TICK_DUR 20
-// entering / leaving the keyboard layer: a tone on both pads, dull and
-// round so it never reads as a click
-#define LK_KBD_ON_DB -12
-#define LK_KBD_OFF_DB -18
-#define LK_KBD_DUR 30
+static int LK_TONE_HZ = 200;
+static int LK_TICK_DB = -24;
+static int LK_TICK_DUR = 20;
+// entering / leaving the keyboard layer, and the right pad starting to aim:
+// a tone on both pads, dull and round so it never reads as a click
+static int LK_KBD_ON_DB = -12;
+static int LK_KBD_OFF_DB = -18;
+static int LK_KBD_DUR = 30;
 // a tick per TICK_PX of cursor travel, so ticks slow down with the ball;
 // scrolling ticks once per wheel notch
-#define LK_TICK_PX 24.0f
+static float LK_TICK_PX = 24.0f;
 #define LK_TICK_MIN_MS 12u
 
 // Keyboard layer: each pad is a 3x3 grid of equal thirds. A zone is left
@@ -158,17 +161,17 @@ static const uint8_t TONE_SIDE[2] = { 1, 0 }; // PAD_R, PAD_L
 // border does not flicker between zones. Side (N/E/S/W) zones have a texture
 // tick per TEX_COUNTS of travel; corners and the center have none.
 #define LK_ZONE_EDGE 10923
-#define LK_ZONE_HYST 1300
-#define LK_TEX_COUNTS 2500
-#define LK_TEX_DB -24
+static int LK_ZONE_HYST = 1300;
+static int LK_TEX_COUNTS = 2500;
+static int LK_TEX_DB = -24;
 // a bump on every zone change, and on entering the band along the pad's
 // outer edge (the sensor can lose a thumb that is still on the pad)
-#define LK_BUMP_DB -12
-#define LK_BUMP_DUR 20
+static int LK_BUMP_DB = -12;
+static int LK_BUMP_DUR = 20;
 #define LK_PAD_EDGE 26000
-// triggers act as keys in the desktop layers at a light pull (0..255)
-#define LK_TRIG_ON 24
-#define LK_TRIG_OFF 12
+// triggers act as keys in the keyboard layer at a light pull (0..255)
+static int LK_TRIG_ON = 24;
+static int LK_TRIG_OFF = 12;
 
 // sticks / triggers beyond these count as "in use" for layer latching
 #define LK_STICK_REST 8000
@@ -176,7 +179,7 @@ static const uint8_t TONE_SIDE[2] = { 1, 0 }; // PAD_R, PAD_L
 // a bond silent this long has dropped; matches the Xbox mode's window
 #define LK_CONN_MS 1200u
 
-enum { LY_PAD, LY_MOUSE, LY_KBD, LY_N };
+enum { LY_CTRL, LY_KBD, LY_N };
 
 // Physical buttons that carry a meaning. Touch bits (pads, sticks, grips)
 // select layers and are never bound.
@@ -189,7 +192,13 @@ enum { LY_PAD, LY_MOUSE, LY_KBD, LY_N };
 
 // ---- USB: XInput interface 0 + one HID keyboard/mouse interface + CDC ----
 
-enum { RID_KBD = 1, RID_MOUSE = 2, RID_WHEEL_MULT = 3, RID_MEDIA = 4 };
+enum {
+	RID_KBD = 1,
+	RID_MOUSE = 2,
+	RID_WHEEL_MULT = 3,
+	RID_MEDIA = 4,
+	RID_SYSTEM = 5
+};
 // Mouse with the Resolution Multiplier feature in the wheel's logical
 // collection (Microsoft's "enhanced wheel" layout): logical 0..1 maps to a
 // physical multiplier of 1..120, so a host that sets it reads the wheel in
@@ -293,6 +302,9 @@ static const uint8_t LK_HID_DESC[] = {
 	0xC0, // End Collection
 	// media keys: one 16-bit consumer usage, 0 = none
 	TUD_HID_REPORT_DESC_CONSUMER(HID_REPORT_ID(RID_MEDIA)),
+	// Sleep and Power: 1 power down, 2 sleep, 0 none. Windows does with
+	// them what it does with the PC's own buttons.
+	TUD_HID_REPORT_DESC_SYSTEM_CONTROL(HID_REPORT_ID(RID_SYSTEM)),
 };
 static Adafruit_USBD_HID g_lkHid;
 // set by the host through RID_WHEEL_MULT (usbd task)
@@ -420,7 +432,7 @@ enum { AN_LT, AN_RT, AN_LSTICK, AN_RSTICK, AN_N };
 enum { AN_FREE, AN_OWNED, AN_BLOCKED };
 
 static int s_slot = -1;
-static uint8_t s_layer = LY_PAD, s_cand = LY_PAD;
+static uint8_t s_layer = LY_CTRL, s_cand = LY_CTRL;
 static uint32_t s_candMs;
 static uint32_t s_prevBtn;
 static uint32_t s_own[LY_N];
@@ -429,12 +441,15 @@ static Pad s_pad[2];
 static GamepadOut s_gp;
 static uint8_t s_sentMBtn, s_sentMod, s_sentKeys[6];
 static uint16_t s_sentMedia;
+static uint8_t s_sentSystem;
 static float s_carryX, s_carryY;
 static float s_tickDist;
 static uint32_t s_tickMs;
 // the Guide button (see guideButton); the puck owns the key map switches
 // and the Guide follows the "KT" line
-static bool s_keymapOn = true, s_keymapLow = true;
+// key map: 0 off, 1 large, 2 small
+static uint8_t s_keymapSize = 1;
+static bool s_keymapLow = true;
 static uint32_t s_guideTapUntil, s_bumpAgainAt, s_statusMs;
 
 // circular scroll on the left pad
@@ -455,6 +470,7 @@ static struct {
 
 // serial console '~w': one line per report while scrolling or coasting
 bool g_lkScrollTrace;
+bool g_lkGyroTrace;
 
 // the virtual trackball behind the cursor (cursor px per report)
 static struct {
@@ -473,17 +489,15 @@ static bool bondAlive(int slot, unsigned long now)
 	       g_connReplyMs[slot] && now - g_connReplyMs[slot] <= LK_CONN_MS;
 }
 
-// Both pads = keyboard, unless a pad click is held as a mouse button: then
-// the other thumb joins in moving the cursor, for long drags.
+// Both pads = keyboard; anything else is the controller, whose pads are the
+// mouse. A click held into the keyboard stays held, so a drag can take a
+// modifier midway.
 static uint8_t layerFromTouch(uint32_t b)
 {
-	bool l = b & TB_LPADT, r = b & TB_RPADT;
-	if (l && r)
-		return s_own[LY_MOUSE] & LK_PADCLICK ? LY_MOUSE : LY_KBD;
-	return (l || r) ? LY_MOUSE : LY_PAD;
+	return (b & TB_LPADT) && (b & TB_RPADT) ? LY_KBD : LY_CTRL;
 }
 
-// ---- gamepad layer: the back buttons carry A/B/X/Y ----
+// ---- controller layer: the back buttons carry A/B/X/Y ----
 
 static uint16_t gamepadButtons(uint32_t b)
 {
@@ -518,50 +532,27 @@ static uint16_t gamepadButtons(uint32_t b)
 	return out;
 }
 
-// ---- desktop keys (mouse and keyboard layers) ----
+// ---- keyboard keys from buttons ----
 
 struct LkKey {
 	uint32_t tb;
 	uint8_t mod;
 	uint8_t key;
-	uint8_t layers; // ON_* layers the binding applies in
 };
-#define ON_PAD (1u << LY_PAD)
-#define ON_MOUSE (1u << LY_MOUSE)
-#define ON_KBD (1u << LY_KBD)
-#define ON_DESK (ON_MOUSE | ON_KBD)
-static const LkKey DESK_KEYS[] = {
-	// back buttons: modifiers, reachable while both thumbs are on the pads.
-	// Shift over Ctrl on the left as on a keyboard, so both can be held
-	// while the right thumb drives the cursor; Alt mirrors Ctrl.
-	{ TB_L4, KEYBOARD_MODIFIER_LEFTSHIFT, 0, ON_DESK },
-	{ TB_L5, KEYBOARD_MODIFIER_LEFTCTRL, 0, ON_DESK },
-	{ TB_R4, KEYBOARD_MODIFIER_LEFTGUI, 0, ON_DESK },
-	{ TB_R5, KEYBOARD_MODIFIER_LEFTALT, 0, ON_DESK },
-	// face buttons: a navigation cluster by direction while mousing; off
-	// while typing, where both thumbs are on the pads
-	{ TB_Y, 0, HID_KEY_PAGE_UP, ON_MOUSE },
-	{ TB_A, 0, HID_KEY_PAGE_DOWN, ON_MOUSE },
-	{ TB_X, 0, HID_KEY_HOME, ON_MOUSE },
-	{ TB_B, 0, HID_KEY_END, ON_MOUSE },
-	// QAM has no Xbox equivalent: screenshots from the gamepad layer
-	{ TB_QAM, 0, HID_KEY_PRINT_SCREEN, ON_PAD },
-	// arrows, Esc and the menu key only while mousing: with both thumbs on
-	// the pads they are out of reach, and offering them only confused
-	{ TB_DUP, 0, HID_KEY_ARROW_UP, ON_MOUSE },
-	{ TB_DDN, 0, HID_KEY_ARROW_DOWN, ON_MOUSE },
-	{ TB_DLF, 0, HID_KEY_ARROW_LEFT, ON_MOUSE },
-	{ TB_DRT, 0, HID_KEY_ARROW_RIGHT, ON_MOUSE },
+static const LkKey BUTTON_KEYS[] = {
+	// back buttons: modifiers. A held one stays a modifier when a thumb
+	// lifts to the pointer (Ctrl-click, Shift-drag). Shift over Ctrl on
+	// the left as on a keyboard; Alt mirrors Ctrl.
+	{ TB_L4, KEYBOARD_MODIFIER_LEFTSHIFT, 0 },
+	{ TB_L5, KEYBOARD_MODIFIER_LEFTCTRL, 0 },
+	{ TB_R4, KEYBOARD_MODIFIER_LEFTGUI, 0 },
+	{ TB_R5, KEYBOARD_MODIFIER_LEFTALT, 0 },
 	// index fingers: the most frequent non-letter keys, reachable while the
-	// thumbs are on the pads (Alt-Tab = R5 + LB from the mouse layer)
-	{ TB_R2, 0, HID_KEY_SPACE, ON_DESK },
-	{ TB_L2, 0, HID_KEY_BACKSPACE, ON_DESK },
-	{ TB_RB, 0, HID_KEY_ENTER, ON_DESK },
-	{ TB_LB, 0, HID_KEY_TAB, ON_DESK },
-	// the center buttons echo their gamepad roles: Back = Esc, Start (the
-	// "menu" button) = the context-menu key
-	{ TB_MENU, 0, HID_KEY_ESCAPE, ON_MOUSE },
-	{ TB_VIEW, 0, HID_KEY_APPLICATION, ON_MOUSE },
+	// thumbs are on the pads
+	{ TB_R2, 0, HID_KEY_SPACE },
+	{ TB_L2, 0, HID_KEY_BACKSPACE },
+	{ TB_RB, 0, HID_KEY_ENTER },
+	{ TB_LB, 0, HID_KEY_TAB },
 };
 
 // ---- keyboard layer: 3x3 zones per pad ----
@@ -577,49 +568,102 @@ enum { Z_NW, Z_N, Z_NE, Z_W, Z_C, Z_E, Z_SW, Z_S, Z_SE, Z_COUNT };
 // keyboard (/ -> ?). The number pages use numpad operators, the keyboard's
 // own duplicates, which ignore Shift; = has no numpad key there.
 static const int8_t RING_POS[Z_COUNT] = { 7, 0, 1, 6, -1, 2, 5, 4, 3 };
+// Media keys are consumer usages, not keyboard ones, so the map holds them as
+// codes past the keyboard page's last usage (0xE7) and MEDIA_USAGE gives the
+// real usage.
+enum { KM_VOL_DOWN = 0xF0, KM_VOL_UP, KM_PREV, KM_NEXT, KM_PLAY, KM_MUTE };
+static const uint16_t MEDIA_USAGE[] = {
+	HID_USAGE_CONSUMER_VOLUME_DECREMENT,
+	HID_USAGE_CONSUMER_VOLUME_INCREMENT,
+	HID_USAGE_CONSUMER_SCAN_PREVIOUS,
+	HID_USAGE_CONSUMER_SCAN_NEXT,
+	HID_USAGE_CONSUMER_PLAY_PAUSE,
+	HID_USAGE_CONSUMER_MUTE,
+};
+// The Copilot key, which Windows defines as Win + Shift + F23: one key here,
+// as on the keyboards that have it. The mouse's back and forward buttons
+// (M4, M5) and the system's Sleep and Power are key map keys too.
+enum { KM_SLEEP = 0xEB, KM_POWER, KM_M4, KM_M5, KM_COPILOT };
 #define K(k) HID_KEY_##k
 static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 	// PAD_R clicked; ring N NE E SE S SW W NW
 	{
-		{},
-		// left thumb N
-		{ K(T), K(F), K(M), K(Z), K(V), K(J), K(D), K(W) },
-		{},
-		// left thumb W: ] on E, backslash on N (the keyboard's
-		// right-hand pair). Thumbs spread outward, each bracket's zone
-		// is the other's page, so [ and ] alternate without moving.
-		{ K(BACKSLASH), 0, K(BRACKET_RIGHT), 0, 0, 0, 0, 0 },
+		// left thumb NW: F6..F10 where 6..0 are, F12 on top
+		{ K(F12), 0, K(F10), K(F9), K(F8), K(F7), K(F6), 0 },
+		// left thumb N: the number row. Its punctuation along the top,
+		// ] - = as on a keyboard after 0, ] mirroring [; the digits
+		// in a U below, 6 on the inner side round to 0 on the outer,
+		// each a zone from the next (see the left pad's N page)
+		{ K(MINUS), K(EQUAL), K(0), K(9), K(8), K(7), K(6),
+		  K(BRACKET_RIGHT) },
+		// left thumb NE: the numpad's 6..0 where 6..0 are. The top
+		// rows run / * - + . Enter across both pads, as a numpad's
+		// operators top it.
+		{ K(KEYPAD_DECIMAL), K(KEYPAD_ENTER), K(KEYPAD_0), K(KEYPAD_9),
+		  K(KEYPAD_8), K(KEYPAD_7), K(KEYPAD_6), K(KEYPAD_ADD) },
+		// left thumb W: the rarer letters, placed by the layout search
+		// with the home page fixed (docs/KEYBOARD_LAYOUT.md)
+		{ K(D), K(W), K(T), K(P), K(M), K(J), K(V), K(Z) },
 		// left thumb center
-		{ K(S), K(P), K(R), K(B), K(L), K(G), K(N), K(C) },
+		{ K(N), K(C), K(S), K(F), K(R), K(B), K(L), K(G) },
+		// left thumb E: keys that aren't F-keys or typing. Forward (M5)
+		// on W: thumbs drawn inward, each mouse button's zone is the
+		// other's page, as with the brackets. The top row is a
+		// keyboard's Print Screen, Scroll Lock, Pause; the AI key on E
+		// (both thumbs the same way); Delete mirrors Insert. SW stays
+		// empty: it neighbours Power (see the left thumb SE page).
+		{ K(SCROLL_LOCK), K(PAUSE), KM_COPILOT, 0, K(DELETE), 0, KM_M5,
+		  K(PRINT_SCREEN) },
+		// left thumb SW: the arrows by direction, the page and line
+		// ends in the corners as on a keyboard's nav cluster
+		{ K(ARROW_UP), K(PAGE_UP), K(ARROW_RIGHT), K(PAGE_DOWN),
+		  K(ARROW_DOWN), K(END), K(ARROW_LEFT), K(HOME) },
+		// left thumb S: free, and beside Power
 		{},
-		// left thumb SW: F6..F10 where 6..0 are, F12 bottom
-		{ K(F7), K(F8), K(F10), 0, K(F12), 0, K(F9), K(F6) },
-		// left thumb S: 6..0 on the top five, numpad keys below
-		{ K(7), K(8), K(0), K(KEYPAD_DECIMAL), K(KEYPAD_DIVIDE),
-		  K(KEYPAD_MULTIPLY), K(9), K(6) },
-		{},
+		// left thumb SE: Power on SW (see the left pad's SW page). The
+		// pages beside this one leave SW empty, so reaching Power by
+		// mistake takes more than one misstep.
+		{ 0, 0, 0, 0, 0, KM_POWER, 0, 0 },
 	},
 	// PAD_L clicked
 	{
-		{},
-		// right thumb N
-		{ K(H), K(Q), K(APOSTROPHE), K(MINUS), K(SLASH), K(SEMICOLON),
-		  K(K), K(X) },
-		{},
-		{},
+		// right thumb NW: the numpad's 1..5 where 1..5 are, / * - on
+		// top (see the right pad's NE page)
+		{ K(KEYPAD_MULTIPLY), K(KEYPAD_SUBTRACT), K(KEYPAD_5),
+		  K(KEYPAD_4), K(KEYPAD_3), K(KEYPAD_2), K(KEYPAD_1),
+		  K(KEYPAD_DIVIDE) },
+		// right thumb N: the number row. ` in the corner as on a
+		// keyboard, [ across from it; 1 on the outer side round to 5 on
+		// the inner, so 5 and 6 face each other across the pads
+		{ 0, K(BRACKET_LEFT), K(5), K(4), K(3), K(2), K(1), K(GRAVE) },
+		// right thumb NE: F1..F5 where 1..5 are, F11 on top
+		{ K(F11), 0, K(F5), K(F4), K(F3), K(F2), K(F1), 0 },
+		// right thumb W: back (M4) on E; Caps Lock on the outer edge as
+		// on a keyboard; Num Lock on top, mirroring Scroll Lock; Insert
+		// mirrors Delete. SE stays empty, beside Sleep.
+		{ K(NUM_LOCK), 0, KM_M4, 0, K(INSERT), 0, K(CAPS_LOCK), 0 },
 		// right thumb center
-		{ K(E), K(U), K(O), K(PERIOD), K(Y), K(COMMA), K(A), K(I) },
-		// right thumb E: [ on W, backtick on N (left-hand pair)
-		{ K(GRAVE), 0, 0, 0, 0, 0, K(BRACKET_LEFT), 0 },
+		{ K(O), K(PERIOD), K(U), K(COMMA), K(I), K(A), K(E), K(Y) },
+		// right thumb E: the rarer letters (see the right pad's W page),
+		// and the rest of the punctuation in the zones they leave
+		{ K(SEMICOLON), K(APOSTROPHE), K(Q), K(SLASH), K(K), K(X), K(H),
+		  K(BACKSLASH) },
+		// right thumb SW: Sleep on SE. Thumbs drawn in and down, each
+		// zone is the other's page, as with M4 and M5; nothing else is
+		// on these pages, and the pages beside them leave SE empty, so
+		// reaching Sleep by mistake takes more than one misstep.
+		{ 0, 0, 0, KM_SLEEP, 0, 0, 0, 0 },
+		// right thumb S: free, and beside Sleep
 		{},
-		// right thumb S: 1..5 on the top five, numpad keys below
-		{ K(2), K(3), K(5), K(EQUAL), K(KEYPAD_ADD), K(KEYPAD_SUBTRACT),
-		  K(4), K(1) },
-		// right thumb SE: F1..F5 where 1..5 are, F11 bottom
-		{ K(F2), K(F3), K(F5), 0, K(F11), 0, K(F4), K(F1) },
+		// right thumb SE: Esc top left, play/pause top center; volume
+		// along the bottom, mute in the corner
+		{ KM_PLAY, 0, KM_NEXT, KM_VOL_UP, KM_VOL_DOWN, KM_MUTE, KM_PREV,
+		  K(ESCAPE) },
 	},
 };
 #undef K
+// the live key map: KEYMAP until the console changes a page (~K)
+static uint8_t s_keymap[2][Z_COUNT][8];
 
 // one axis of the grid: 0 = low third, 1 = middle, 2 = high
 static uint8_t zoneBand(int v, uint8_t cur)
@@ -674,8 +718,8 @@ static bool analogPasses(uint8_t ch, bool active)
 	if (!active)
 		s_an[ch] = AN_FREE;
 	else if (s_an[ch] == AN_FREE)
-		s_an[ch] = s_layer == LY_PAD ? AN_OWNED : AN_BLOCKED;
-	if (s_layer == LY_PAD)
+		s_an[ch] = s_layer == LY_CTRL ? AN_OWNED : AN_BLOCKED;
+	if (s_layer == LY_CTRL)
 		return s_an[ch] != AN_BLOCKED;
 	return s_an[ch] == AN_OWNED;
 }
@@ -869,6 +913,16 @@ static void sendMedia(uint16_t usage)
 	usbTxHid(&g_lkHid, RID_MEDIA, &usage, sizeof usage);
 }
 
+static void sendSystem(uint8_t usage)
+{
+	if (guideHolds())
+		usage = 0;
+	if (usage == s_sentSystem)
+		return;
+	s_sentSystem = usage;
+	usbTxHid(&g_lkHid, RID_SYSTEM, &usage, sizeof usage);
+}
+
 static void haptic(uint8_t rid, const uint8_t *p, uint8_t n)
 {
 	if (s_slot >= 0 && hapticLinkUp(s_slot))
@@ -930,13 +984,15 @@ static void releaseAll()
 	sendMouse(0, 0, 0, 0);
 	s_sentMedia = 0xFFFF;
 	sendMedia(0);
+	s_sentSystem = 0xFF;
+	sendSystem(0);
 	memset(s_own, 0, sizeof s_own);
 	memset(s_an, 0, sizeof s_an);
 	memset(s_pad, 0, sizeof s_pad);
 	memset(&s_gp, 0, sizeof s_gp);
 	memset(&s_ball, 0, sizeof s_ball);
 	s_prevBtn = 0;
-	s_layer = s_cand = LY_PAD;
+	s_layer = s_cand = LY_CTRL;
 	s_carryX = s_carryY = 0;
 	memset(&s_scroll, 0, sizeof s_scroll);
 }
@@ -991,7 +1047,7 @@ static void layerStep(uint8_t touchLayer, uint32_t now)
 
 // New presses join the current layer and keep it until released. Pad clicks
 // use the undebounced layer: the thumb is down by definition, and a quick
-// tap would otherwise land in the gamepad layer.
+// tap would otherwise land in the controller layer.
 static void ownButtons(uint32_t b, uint8_t touchLayer)
 {
 	uint32_t pressed = b & ~s_prevBtn;
@@ -1005,7 +1061,7 @@ static void ownButtons(uint32_t b, uint8_t touchLayer)
 
 static void gamepadStep(const PuckInput &in)
 {
-	s_gp.btn = gamepadButtons(s_own[LY_PAD]);
+	s_gp.btn = gamepadButtons(s_own[LY_CTRL]);
 	if (s_guideTapUntil && (int32_t)(s_guideTapUntil - millis()) > 0)
 		s_gp.btn |= XB_GUIDE;
 	else
@@ -1055,7 +1111,7 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 		bool click = raw & CLICK_BIT[i];
 		uint8_t z = zone[i];
 		int8_t pos = RING_POS[z];
-		uint8_t key = pos >= 0 ? KEYMAP[i][zone[1 - i]][pos] : 0;
+		uint8_t key = pos >= 0 ? s_keymap[i][zone[1 - i]][pos] : 0;
 		if (click != pd.click) {
 			pd.click = click;
 			if (!click) {
@@ -1089,7 +1145,7 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 }
 
 // Trigger keys have no physical click at a light pull: pulse the pad on that
-// side on press and release, in the desktop layers.
+// side on press and release, in the keyboard layer.
 static void triggerPulses(uint32_t raw)
 {
 	static bool down[2], keyed[2];
@@ -1099,7 +1155,7 @@ static void triggerPulses(uint32_t raw)
 			continue;
 		down[i] = d;
 		if (d)
-			keyed[i] = s_layer != LY_PAD;
+			keyed[i] = s_layer != LY_CTRL;
 		if (keyed[i])
 			hapticClick(PULSE_SIDE[i], d);
 	}
@@ -1143,10 +1199,9 @@ static uint8_t s_ksLast[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
 
 static void streamState(const uint8_t zone[2])
 {
-	const uint8_t shifts = KEYBOARD_MODIFIER_LEFTSHIFT |
-			       KEYBOARD_MODIFIER_RIGHTSHIFT;
-	// s_sentMod is 0xFF ("unknown") right after releaseAll()
-	bool shift = s_sentMod != 0xFF && (s_sentMod & shifts);
+	// the Shift held, whether or not it reaches the host (the Guide holds
+	// the host's input while it's up, and its key map still shifts)
+	bool shift = s_own[LY_KBD] & TB_L4;
 	const uint8_t cur[4] = { s_layer, zone[PAD_R], zone[PAD_L], shift };
 	if (!memcmp(cur, s_ksLast, sizeof cur) || !Serial ||
 	    Serial.availableForWrite() < 24)
@@ -1189,11 +1244,10 @@ static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 	lastMs = now;
 	memcpy(last, cur, sizeof cur);
 	memcpy(lastOwn, s_own, sizeof lastOwn);
-	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d %lx %lx %lx\n",
+	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d %lx %lx\n",
 		      (unsigned long)b, cur[0], cur[1], cur[2], cur[3], cur[4],
 		      cur[5], cur[6], cur[7], cur[8], cur[9],
-		      (unsigned long)s_own[LY_PAD],
-		      (unsigned long)s_own[LY_MOUSE],
+		      (unsigned long)s_own[LY_CTRL],
 		      (unsigned long)s_own[LY_KBD]);
 }
 
@@ -1203,7 +1257,7 @@ void lkDumpKeymap()
 		for (int z = 0; z < Z_COUNT; z++) {
 			Serial.printf("KM %d %d", pad, z);
 			for (int k = 0; k < 8; k++)
-				Serial.printf(" %02X", KEYMAP[pad][z][k]);
+				Serial.printf(" %02X", s_keymap[pad][z][k]);
 			Serial.printf("\n");
 		}
 	}
@@ -1212,45 +1266,42 @@ void lkDumpKeymap()
 	memset(s_ksLast, 0xFF, sizeof s_ksLast);
 }
 
-// Media keys in the mouse layer, where the left thumb is free: left stick
-// up/down = volume, left/right = previous/next track, QAM = play/pause. The
-// stick counts once it is in use in this layer (see analogPasses), so one
-// still held from the gamepad layer stays a gamepad stick.
-static void mediaStep(const PuckInput &in)
+static void mediaStep()
 {
 	uint16_t usage = 0;
-	if (s_own[LY_MOUSE] & TB_QAM)
-		usage = HID_USAGE_CONSUMER_PLAY_PAUSE;
-	if (s_layer == LY_MOUSE && s_an[AN_LSTICK] == AN_BLOCKED) {
-		bool vert = abs(in.ly) >= abs(in.lx);
-		bool pos = vert ? in.ly > 0 : in.lx > 0;
-		if (vert)
-			usage = pos ? HID_USAGE_CONSUMER_VOLUME_INCREMENT :
-				      HID_USAGE_CONSUMER_VOLUME_DECREMENT;
-		else
-			usage = pos ? HID_USAGE_CONSUMER_SCAN_NEXT :
-				      HID_USAGE_CONSUMER_SCAN_PREVIOUS;
+	uint8_t sys = 0;
+	for (const auto &pd : s_pad) {
+		if (pd.key >= KM_VOL_DOWN)
+			usage = MEDIA_USAGE[pd.key - KM_VOL_DOWN];
+		if (pd.key == KM_POWER)
+			sys = 1;
+		if (pd.key == KM_SLEEP)
+			sys = 2;
 	}
 	sendMedia(usage);
+	sendSystem(sys);
 }
 
 static void keyboardStep()
 {
 	uint8_t mod = 0, keys[6] = {}, nk = 0;
-	for (const auto &k : DESK_KEYS) {
-		uint32_t own = 0;
-		for (int l = 0; l < LY_N; l++)
-			if (k.layers & (1u << l))
-				own |= s_own[l];
-		if (!(own & k.tb))
+	for (const auto &k : BUTTON_KEYS) {
+		if (!(s_own[LY_KBD] & k.tb))
 			continue;
 		mod |= k.mod;
 		if (k.key && nk < 6)
 			keys[nk++] = k.key;
 	}
-	for (const auto &pd : s_pad)
-		if (pd.key && nk < 6)
-			keys[nk++] = pd.key;
+	for (const auto &pd : s_pad) {
+		uint8_t key = pd.key;
+		if (key == KM_COPILOT) {
+			mod |= KEYBOARD_MODIFIER_LEFTGUI |
+			       KEYBOARD_MODIFIER_LEFTSHIFT;
+			key = HID_KEY_F23;
+		}
+		if (key && key <= HID_KEY_GUI_RIGHT && nk < 6)
+			keys[nk++] = key;
+	}
 	sendKeyboard(mod, keys);
 }
 
@@ -1402,17 +1453,143 @@ static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y, int16_t p,
 	return wheel;
 }
 
-// Mouse layer: right pad = trackball cursor, left pad = circular wheel. While
-// a pad click is held as a button, both pads move the cursor (drag).
-static void mouseStep(const PuckInput &in, bool deskOk, int rdx, int rdy,
-		      int ldx, int ldy, uint32_t now)
+// ---- gyro aiming ----
+
+// raw gyro counts per degree per second (the +-2000 deg/s range)
+#define LK_GYRO_PER_DPS 16.4f
+// Cursor counts per degree the controller turns, rising with speed: slow,
+// careful aim gets the low end for precision, a fast swing the high end so a
+// big turn stays short (JoyShockMapper's acceleration).
+static float LK_GYRO_SENS_SLOW = 8.0f;
+static float LK_GYRO_SENS_FAST = 20.0f;
+static float LK_GYRO_SLOW_DPS = 15.0f;
+static float LK_GYRO_FAST_DPS = 75.0f;
+// Soft smoothing: below this speed the input blends into the average of the
+// last LK_GYRO_SMOOTH_N reports, fading out as speed rises, which steadies
+// hand tremor without lagging deliberate movement.
+static float LK_GYRO_SMOOTH_DPS = 5.0f;
+#define LK_GYRO_SMOOTH_N 8
+// Player space (as in JoyShockMapper): turning is measured about gravity, so
+// it feels the same however the controller is tilted in the hands; a turn
+// leaning into roll counts up to this much more, capped at the full rate.
+static float LK_GYRO_YAW_RELAX = 1.41f;
+// a sample this close to the bias, while not aiming, is the controller at
+// rest, and the bias follows it (the gyro drifts a few counts)
+static float LK_GYRO_STILL = 60.0f;
+static float LK_GYRO_BIAS_RATE = 0.004f;
+// gravity, low-passed from the accelerometer, per report
+#define LK_GYRO_GRAVITY_RATE 0.05f
+// Signs: turning right moves the cursor right, tilting the top up moves it
+// up (controller axes: x right, y toward the triggers, z out of the face).
+static float LK_GYRO_YAW_SIGN = -1.0f;
+static float LK_GYRO_PITCH_SIGN = -1.0f;
+
+static struct {
+	float bx, by, bz;
+	float ay, az;
+	uint32_t lastUs;
+	// recent yaw/pitch rates for smoothing, deg/s
+	float histYaw[LK_GYRO_SMOOTH_N], histPitch[LK_GYRO_SMOOTH_N];
+	uint8_t histAt;
+	bool aimed;
+	// gyro travel the cursor hasn't taken yet: the dead zone, as the
+	// trackball's gap
+	float gapX, gapY;
+} s_gyro;
+
+// Pointer movement from the gyro this report. The right pad is the mouse, and
+// gyro is a second input to it while the thumb is on the pad, as on the
+// original Steam Controller: lifting the thumb pauses it, which is how the
+// aim ratchets.
+// It shares the trackball's pressure and lift dead zones, radius r: pressing,
+// clicking and rolling off the pad tilt the controller too. It never feeds
+// the trackball's momentum, so the ratchet stops it dead.
+static void gyroStep(const PuckInput &in, bool aiming, float r, float *dx,
+		     float *dy)
+{
+	*dx = *dy = 0;
+	s_gyro.ay += LK_GYRO_GRAVITY_RATE * (in.ay - s_gyro.ay);
+	s_gyro.az += LK_GYRO_GRAVITY_RATE * (in.az - s_gyro.az);
+	float wx = in.gx - s_gyro.bx, wy = in.gy - s_gyro.by,
+	      wz = in.gz - s_gyro.bz;
+	uint32_t dtUs = in.imuTimestampUs - s_gyro.lastUs;
+	bool fresh = dtUs != 0;
+	s_gyro.lastUs = in.imuTimestampUs;
+	// each touch starts with a clean smoothing history and dead zone
+	if (aiming && !s_gyro.aimed) {
+		memset(s_gyro.histYaw, 0, sizeof s_gyro.histYaw);
+		memset(s_gyro.histPitch, 0, sizeof s_gyro.histPitch);
+		s_gyro.gapX = s_gyro.gapY = 0;
+	}
+	s_gyro.aimed = aiming;
+	if (!aiming) {
+		if (fresh && fabsf(wx) < LK_GYRO_STILL &&
+		    fabsf(wy) < LK_GYRO_STILL && fabsf(wz) < LK_GYRO_STILL) {
+			s_gyro.bx += LK_GYRO_BIAS_RATE * wx;
+			s_gyro.by += LK_GYRO_BIAS_RATE * wy;
+			s_gyro.bz += LK_GYRO_BIAS_RATE * wz;
+		}
+		return;
+	}
+	// a gap (a lost report, a reconnect) is not a turn
+	if (!fresh || dtUs > 20000)
+		return;
+	float g = sqrtf(s_gyro.ay * s_gyro.ay + s_gyro.az * s_gyro.az);
+	if (g < 1.0f)
+		return;
+	float worldYaw = (wy * s_gyro.ay + wz * s_gyro.az) / g;
+	float yaw = fminf(fabsf(worldYaw) * LK_GYRO_YAW_RELAX,
+			  sqrtf(wy * wy + wz * wz));
+	yaw = copysignf(yaw, worldYaw) / LK_GYRO_PER_DPS;
+	float pitch = wx / LK_GYRO_PER_DPS;
+
+	float speed = sqrtf(yaw * yaw + pitch * pitch);
+	uint8_t at = s_gyro.histAt;
+	s_gyro.histAt = (uint8_t)((at + 1) % LK_GYRO_SMOOTH_N);
+	s_gyro.histYaw[at] = yaw;
+	s_gyro.histPitch[at] = pitch;
+	float avgYaw = 0, avgPitch = 0;
+	for (int i = 0; i < LK_GYRO_SMOOTH_N; i++) {
+		avgYaw += s_gyro.histYaw[i];
+		avgPitch += s_gyro.histPitch[i];
+	}
+	avgYaw /= LK_GYRO_SMOOTH_N;
+	avgPitch /= LK_GYRO_SMOOTH_N;
+	float direct = constrain((speed - LK_GYRO_SMOOTH_DPS / 2) /
+					 (LK_GYRO_SMOOTH_DPS / 2),
+				 0.0f, 1.0f);
+	yaw = direct * yaw + (1 - direct) * avgYaw;
+	pitch = direct * pitch + (1 - direct) * avgPitch;
+
+	float t = constrain((speed - LK_GYRO_SLOW_DPS) /
+				    (LK_GYRO_FAST_DPS - LK_GYRO_SLOW_DPS),
+			    0.0f, 1.0f);
+	float sens =
+		LK_GYRO_SENS_SLOW + t * (LK_GYRO_SENS_FAST - LK_GYRO_SENS_SLOW);
+	float k = dtUs * 1e-6f * sens;
+	s_gyro.gapX += LK_GYRO_YAW_SIGN * yaw * k;
+	s_gyro.gapY += LK_GYRO_PITCH_SIGN * pitch * k;
+	float gap =
+		sqrtf(s_gyro.gapX * s_gyro.gapX + s_gyro.gapY * s_gyro.gapY);
+	if (gap <= r)
+		return;
+	float out = (gap - r) / gap;
+	*dx = s_gyro.gapX * out;
+	*dy = s_gyro.gapY * out;
+	s_gyro.gapX -= *dx;
+	s_gyro.gapY -= *dy;
+}
+
+// Outside the keyboard the pads are the mouse: right pad = trackball pointer,
+// left pad = circular wheel.
+static void mouseStep(const PuckInput &in, uint8_t touchLayer, int rdx, int rdy,
+		      uint32_t now)
 {
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
-	bool drag = deskOk && rTouch && lTouch;
-	int dx0 = rdx + (drag ? ldx : 0), dy0 = rdy + (drag ? ldy : 0);
-	float tx = (float)dx0 / LK_PX_DIV, ty = (float)-dy0 / LK_PX_DIV;
+	bool mouse = touchLayer == LY_CTRL && s_layer == LY_CTRL;
+	float tx = (float)rdx / LK_PX_DIV, ty = (float)-rdy / LK_PX_DIV;
 	float fx, fy;
-	ballStep(deskOk && rTouch, rTouch, tx, ty, in.rpz, s_pad[PAD_R].click,
+	ballStep(mouse && rTouch, rTouch, tx, ty, in.rpz, s_pad[PAD_R].click,
 		 &fx, &fy);
 	if (g_lkTrace && Serial.availableForWrite() > 60)
 		Serial.printf("R %lu %d %d %.1f %.1f %.1f %.1f %.1f %.1f %.1f "
@@ -1422,25 +1599,31 @@ static void mouseStep(const PuckInput &in, bool deskOk, int rdx, int rdy,
 			      s_ball.speed);
 	moveTick(sqrtf(fx * fx + fy * fy), now);
 
-	fx += s_carryX;
-	fy += s_carryY;
+	float gx, gy;
+	float r = fmaxf(deadZone(in.rpz, s_pad[PAD_R].click), s_ball.liftR);
+	gyroStep(in, mouse && rTouch, r, &gx, &gy);
+	fx += gx + s_carryX;
+	fy += gy + s_carryY;
 	int dx = clampI8(fx), dy = clampI8(fy), wheel = 0;
 	s_carryX = fx - dx;
 	s_carryY = fy - dy;
 
-	wheel = wheelStep(deskOk && lTouch && !drag, lTouch, in.lpx, in.lpy,
-			  in.lpz, now);
+	wheel = wheelStep(mouse && lTouch, lTouch, in.lpx, in.lpy, in.lpz, now);
 
 	uint8_t mbtn = 0;
-	if (s_own[LY_MOUSE] & TB_RPADC)
+	if (s_own[LY_CTRL] & TB_RPADC)
 		mbtn |= MOUSE_BUTTON_LEFT;
-	if (s_own[LY_MOUSE] & TB_LPADC)
+	if (s_own[LY_CTRL] & TB_LPADC)
 		mbtn |= MOUSE_BUTTON_RIGHT;
-	// stick clicks: middle (left thumb, while the right one points), back
-	if (s_own[LY_MOUSE] & TB_L3)
+	// QAM, between the pads, is the middle button
+	if (s_own[LY_CTRL] & TB_QAM)
 		mbtn |= MOUSE_BUTTON_MIDDLE;
-	if (s_own[LY_MOUSE] & TB_R3)
-		mbtn |= MOUSE_BUTTON_BACKWARD;
+	for (const auto &pd : s_pad) {
+		if (pd.key == KM_M4)
+			mbtn |= MOUSE_BUTTON_BACKWARD;
+		if (pd.key == KM_M5)
+			mbtn |= MOUSE_BUTTON_FORWARD;
+	}
 	sendMouse(mbtn, dx, dy, wheel);
 }
 
@@ -1451,7 +1634,7 @@ static void bumpBoth()
 }
 
 // The Guide button (the controller's Steam button) reaches LizardKing before
-// the host. In the gamepad layer a tap goes to Windows as the Xbox Guide
+// the host. In the controller layer a tap goes to Windows as the Xbox Guide
 // press (Game Bar, the Steam overlay), and a hold past GUIDE_MEDIUM_MS is
 // LizardKing's own: the Guide on, or without a Guide the guide drive. Guide +
 // another button is a chord, in any layer, and neither reaches the host.
@@ -1469,6 +1652,12 @@ static void confirm(bool on)
 
 static void guideChord(uint32_t btn)
 {
+	// Back: the controller off, as Steam's "turn off controller" does
+	if (btn & TB_MENU) {
+		if (s_slot >= 0)
+			hapticSendShutdown((uint8_t)s_slot);
+		return;
+	}
 	if (!(btn & (TB_RPADC | TB_LPADC | TB_VIEW)))
 		return;
 	if (!Serial) {
@@ -1476,10 +1665,10 @@ static void guideChord(uint32_t btn)
 		bumpBoth();
 		return;
 	}
-	if (btn & TB_RPADC) {
-		s_keymapOn = !s_keymapOn;
-		confirm(s_keymapOn);
-	} else if (btn & TB_LPADC) {
+	if (btn & TB_LPADC) {
+		s_keymapSize = (uint8_t)((s_keymapSize + 1) % 3);
+		confirm(s_keymapSize);
+	} else if (btn & TB_RPADC) {
 		s_keymapLow = !s_keymapLow;
 		bumpBoth();
 	} else {
@@ -1490,9 +1679,10 @@ static void guideChord(uint32_t btn)
 	s_statusMs = 0;
 }
 
-// Only a press begun in the gamepad layer opens anything (the Guide, the
-// drive, Windows' Guide): with a thumb on a pad the Guide button is a chord
-// about to happen. Closing the Guide works from any layer. The medium press
+// Only a press with no thumb on a pad, from start to finish, opens anything
+// (the Guide, the drive, Windows' Guide): with a thumb on a pad the Guide
+// button is a chord about to happen, and a thumb landing mid-press is one
+// on its way. Closing the Guide works from anywhere. The medium press
 // answers the moment the hold passes GUIDE_MEDIUM_MS, so the Guide (or the
 // drive) appearing is the sign it worked; holding on changes nothing.
 static void guideMedium(bool gamepad)
@@ -1527,9 +1717,13 @@ static uint32_t guideButton(uint32_t raw, uint32_t now)
 		if (!down) {
 			down = true;
 			spent = false;
-			gamepad = s_layer == LY_PAD;
+			gamepad = true;
 			since = now;
 		}
+		// a thumb on a pad, at the press or any time during it, means a
+		// chord is coming: the press opens nothing
+		if (raw & (TB_LPADT | TB_RPADT))
+			gamepad = false;
 		if (fresh) {
 			spent = true;
 			swallow |= fresh;
@@ -1574,9 +1768,8 @@ static void lkProcess(const PuckInput &in)
 	zoneHaptics(in, zone, wasOn, travel);
 	streamState(zone);
 	keyboardStep();
-	mediaStep(in);
-	mouseStep(in, touchLayer == LY_MOUSE && s_layer != LY_KBD, rdx, rdy,
-		  ldx, ldy, now);
+	mediaStep();
+	mouseStep(in, touchLayer, rdx, rdy, now);
 }
 
 // ---- controller ----
@@ -1601,6 +1794,7 @@ void LizardKingController::usbIdentity()
 
 void LizardKingController::begin()
 {
+	memcpy(s_keymap, KEYMAP, sizeof s_keymap);
 	beginShared();
 	usbIdentity();
 	g_lkXi.begin();
@@ -1630,6 +1824,12 @@ void LizardKingController::onReport45(int slot, const uint8_t *rep, bool fresh,
 		}
 		if (slot == s_slot)
 			lkProcess(g_in[slot]);
+		const PuckInput &in = g_in[slot];
+		if (g_lkGyroTrace && slot == s_slot && fresh &&
+		    Serial.availableForWrite() > 60)
+			Serial.printf("Y %lu %d %d %d %d %d %d\n",
+				      (unsigned long)in.imuTimestampUs, in.gx,
+				      in.gy, in.gz, in.ax, in.ay, in.az);
 	}
 	XboxController::onReport45(slot, rep, fresh, bodyTlen);
 }
@@ -1647,9 +1847,12 @@ void LizardKingController::emit(uint8_t slot, uint32_t generation,
 }
 
 // Status for the Guide, about once a second while it holds the port:
-// "KT connected battery% charge signal keymap low" (charge as in report 0x43:
-// 1 discharging, 2 charging, 4 charged, 0 unknown; signal in -dBm, 0 = no
-// sample yet; keymap and low are the key map switches).
+// "KT connected battery% charge signal keymap low dev" (charge as in report
+// 0x43: 1 discharging, 2 charging, 4 charged, 0 unknown; signal in -dBm, 0 =
+// no sample yet; keymap the key map's size, 0 off, 1 large, 2 small, and low
+// its place; dev, the console
+// has the key map or a feel constant off what ships, see lkTune).
+static bool devOverrides();
 static void streamStatus(uint32_t now)
 {
 	if (now - s_statusMs < 1000 || !Serial ||
@@ -1662,8 +1865,8 @@ static void streamStatus(uint32_t now)
 			   0;
 	unsigned batt = on ? g_battery[s_slot] : 0;
 	unsigned charge = on ? g_batteryState[s_slot] : 0;
-	Serial.printf("KT %d %u %u %d %d %d\n", on ? 1 : 0, batt, charge, rssi,
-		      s_keymapOn, s_keymapLow);
+	Serial.printf("KT %d %u %u %d %d %d %d\n", on ? 1 : 0, batt, charge,
+		      rssi, s_keymapSize, s_keymapLow, devOverrides());
 }
 
 void LizardKingController::task()
@@ -1679,4 +1882,110 @@ void LizardKingController::task()
 		releaseAll();
 		s_slot = -1;
 	}
+}
+
+// ---- live tuning from the serial console ----
+
+// Saving these to flash, so a change survives a reboot, is left for when
+// LizardKing lets its owner keep a customization (docs/ROADMAP.md).
+
+void lkSetKeymapPage(const char *a)
+{
+	char *e;
+	long pad = strtol(a, &e, 16), zone = strtol(e, &e, 16);
+	uint8_t page[8];
+	for (int k = 0; k < 8; k++)
+		page[k] = (uint8_t)strtol(e, &e, 16);
+	if (pad < 0 || pad > 1 || zone < 0 || zone >= Z_COUNT) {
+		Serial.printf("# ~K pad zone k0..k7 (hex)\n");
+		return;
+	}
+	memcpy(s_keymap[pad][zone], page, sizeof page);
+	s_statusMs = 0;
+}
+
+// each with the value it ships with, read before the console can change it
+#define TUNE_I(n) { #n, nullptr, &n, (float)n }
+#define TUNE_F(n) { #n, &n, nullptr, n }
+static const struct {
+	const char *name;
+	float *f;
+	int *i;
+	float shipped;
+} TUNABLES[] = {
+	TUNE_I(LK_SWITCH_MS),	    TUNE_I(LK_CLICK_ON),
+	TUNE_I(LK_CLICK_OFF),	    TUNE_I(LK_KEY_CLICK_ON),
+	TUNE_I(LK_KEY_CLICK_OFF),   TUNE_I(LK_PX_DIV),
+	TUNE_I(LK_DZ_START),	    TUNE_I(LK_DZ_FULL),
+	TUNE_I(LK_CLICK_ON_US),	    TUNE_I(LK_RELEASE_ON_US),
+	TUNE_I(LK_KEY_ON_US),	    TUNE_I(LK_KEY_RELEASE_ON_US),
+	TUNE_I(LK_TONE_HZ),	    TUNE_I(LK_TICK_DB),
+	TUNE_I(LK_TICK_DUR),	    TUNE_I(LK_KBD_ON_DB),
+	TUNE_I(LK_KBD_OFF_DB),	    TUNE_I(LK_KBD_DUR),
+	TUNE_I(LK_ZONE_HYST),	    TUNE_I(LK_TEX_COUNTS),
+	TUNE_I(LK_TEX_DB),	    TUNE_I(LK_BUMP_DB),
+	TUNE_I(LK_BUMP_DUR),	    TUNE_I(LK_TRIG_ON),
+	TUNE_I(LK_TRIG_OFF),	    TUNE_F(LK_FOLLOW_SLOW),
+	TUNE_F(LK_FOLLOW_FAST),	    TUNE_F(LK_FOLLOW_MIN),
+	TUNE_F(LK_SPEED_ALPHA),	    TUNE_F(LK_LAUNCH_ALPHA),
+	TUNE_F(LK_GLIDE_DECAY),	    TUNE_F(LK_GLIDE_DRAG),
+	TUNE_F(LK_GLIDE_MAX),	    TUNE_F(LK_GHOST_DECAY),
+	TUNE_F(LK_DEADZONE_PX),	    TUNE_F(LK_LIFT_GAIN),
+	TUNE_F(LK_LIFT_MAX),	    TUNE_F(LK_LIFT_DECAY),
+	TUNE_F(LK_LIFT_HOLD_PX),    TUNE_F(LK_SCROLL_REV),
+	TUNE_F(LK_SCROLL_R_IN),	    TUNE_F(LK_SCROLL_R_OUT),
+	TUNE_F(LK_SCROLL_OUTLIER),  TUNE_F(LK_SCROLL_R_HOLD),
+	TUNE_F(LK_SCROLL_FLING),    TUNE_F(LK_SCROLL_DECAY),
+	TUNE_F(LK_SCROLL_STOP),	    TUNE_F(LK_SCROLL_TICK),
+	TUNE_F(LK_TICK_PX),	    TUNE_F(LK_GYRO_SENS_SLOW),
+	TUNE_F(LK_GYRO_SENS_FAST),  TUNE_F(LK_GYRO_SLOW_DPS),
+	TUNE_F(LK_GYRO_FAST_DPS),   TUNE_F(LK_GYRO_SMOOTH_DPS),
+	TUNE_F(LK_GYRO_YAW_RELAX),  TUNE_F(LK_GYRO_STILL),
+	TUNE_F(LK_GYRO_BIAS_RATE),  TUNE_F(LK_GYRO_YAW_SIGN),
+	TUNE_F(LK_GYRO_PITCH_SIGN),
+};
+
+static bool devOverrides()
+{
+	if (memcmp(s_keymap, KEYMAP, sizeof s_keymap))
+		return true;
+	for (const auto &t : TUNABLES)
+		if ((t.f ? *t.f : (float)*t.i) != t.shipped)
+			return true;
+	return false;
+}
+
+void lkTune(const char *a)
+{
+	while (*a == ' ')
+		a++;
+	char name[32];
+	size_t n = strcspn(a, " ");
+	if (n >= sizeof name)
+		n = sizeof name - 1;
+	memcpy(name, a, n);
+	name[n] = 0;
+	const char *value = a + n;
+	while (*value == ' ')
+		value++;
+	for (const auto &t : TUNABLES) {
+		if (n && strcmp(name, t.name))
+			continue;
+		if (n && *value) {
+			double v = atof(value);
+			if (t.f)
+				*t.f = (float)v;
+			else
+				*t.i = (int)v;
+			s_statusMs = 0;
+		}
+		if (t.f)
+			Serial.printf("# %s %g\n", t.name, (double)*t.f);
+		else
+			Serial.printf("# %s %d\n", t.name, *t.i);
+		if (n)
+			return;
+	}
+	if (n)
+		Serial.printf("# no tunable %s\n", name);
 }

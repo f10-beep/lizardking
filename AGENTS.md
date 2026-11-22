@@ -119,6 +119,9 @@ make flash    # installs the release UF2: wipes the pairing
 make flash KEEP_BONDS=1   # the dev UF2: keeps the pairing
 make check    # format-check + trailing-comment lint
 make format   # apply kernel style
+make keymap   # push the source's key map to the running puck, no reflash
+make tune SET="LK_GYRO_SENS_SLOW 10"   # set a feel constant live (no SET:
+              # list them); both last until the puck reboots
 ```
 
 `make check` needs clang-format 18: on the PATH, or from PyPI

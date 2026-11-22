@@ -28,8 +28,8 @@ rf_link.cpp          the controller protocol: discovery, bonding, the poll
                      (triton.h), relaying host commands
    │
    ▼  g_active->onReport45(slot, …)          (controllers.h)
-mode_lizardking.cpp  LizardKing: layers (gamepad / mouse / keyboard by pad
-                     touch), trackball cursor, scroll, keyboard zones, the
+mode_lizardking.cpp  LizardKing: layers (both pads = keyboard, else the
+                     gamepad, its pads the mouse), trackball cursor, scroll, keyboard zones, the
                      Guide button and its chords, the Guide's serial protocol
    ├─ mode_xinput.cpp   XInput class driver, bond selection, rumble
    ├─ HID keyboard + mouse + consumer interface (in mode_lizardking.cpp)

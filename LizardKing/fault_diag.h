@@ -91,7 +91,7 @@ enum {
 	FR_RESUME, // USB bus resume edge
 	FR_OFF, // controller power-off (0x9F) relayed (arg = slot)
 	FR_RINGF, // relay-ring fault caught          (arg = running count)
-	FR_SAVE, // bond flash write (saveBonds)
+	FR_SAVE, // flash write: arg 0 bonds, 1 settings
 };
 
 // Push one event into the flight recorder. Cheap + ISR/usbd-safe (a few stores under PRIMASK, no printf).

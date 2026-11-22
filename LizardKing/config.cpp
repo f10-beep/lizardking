@@ -1,5 +1,8 @@
 #include "config.h"
+#include "fault_diag.h"
 #include "haptics.h"
+#include "rf_link.h"
+#include <Adafruit_TinyUSB.h>
 #include <Adafruit_LittleFS.h>
 #include <InternalFileSystem.h>
 #include <string.h>
@@ -37,7 +40,14 @@ void cfgExtWrite(uint8_t index, uint8_t value)
 		g_cfgExt[index] = value;
 }
 
+static bool s_dirty;
+
 void saveCfg()
+{
+	s_dirty = true;
+}
+
+static void writeCfg()
 {
 	Cfg c = { CFG_MAGIC,
 		  (uint8_t)(g_rumbleScale / 2),
@@ -51,6 +61,18 @@ void saveCfg()
 		f.write((uint8_t *)&c, sizeof c);
 		f.close();
 	}
+}
+
+// A LittleFS write erases flash, which halts the CPU for hundreds of ms: long
+// enough for the RF link to drop mid-play (and a held chord to fire twice).
+// So writes wait until no controller is live or the host sleeps.
+void cfgTask()
+{
+	if (!s_dirty || (anySlotLinkUp() && !USBDevice.suspended()))
+		return;
+	s_dirty = false;
+	faultDiagTrace(FR_SAVE, 1);
+	writeCfg();
 }
 
 void loadCfg()

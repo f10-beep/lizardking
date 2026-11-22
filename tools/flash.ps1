@@ -2,6 +2,7 @@
 # bootloader, then copy the file onto the drive that appears.
 param([Parameter(Mandatory)][string]$Uf2)
 $ErrorActionPreference = 'Stop'
+. (Join-Path $PSScriptRoot 'puck-port.ps1')
 
 function Find-BootDrive {
 	Get-PSDrive -PSProvider FileSystem |
@@ -11,30 +12,11 @@ function Find-BootDrive {
 
 $drive = Find-BootDrive
 if (-not $drive) {
-	# interface 2 is the CDC console (docs/DESIGN.md, USB)
-	$dev = Get-CimInstance Win32_PnPEntity |
-		Where-Object { $_.PNPDeviceID -like 'USB\VID_1209&PID_0001&MI_02*' }
-	if (-not $dev -or $dev.Name -notmatch '\((COM\d+)\)') {
-		# an unpaired puck is in Steam mode, which has no serial console
+	if (-not (Find-PuckCom)) {
 		throw 'No LizardKing puck found (an unpaired one is in Steam mode). ' +
 			'Double-tap reset for the bootloader drive, then retry.'
 	}
-	$com = $Matches[1]
-	& (Join-Path $PSScriptRoot 'quit-guide.ps1')
-	$port = New-Object System.IO.Ports.SerialPort $com
-	$port.DtrEnable = $true
-	$deadline = (Get-Date).AddSeconds(5)
-	while ($true) {
-		try {
-			$port.Open()
-			break
-		} catch {
-			if ((Get-Date) -gt $deadline) {
-				throw "$com is busy: quit whatever holds it and retry."
-			}
-			Start-Sleep -Milliseconds 250
-		}
-	}
+	$port = Open-PuckPort
 	$port.Write("~b`n")
 	Start-Sleep -Milliseconds 100
 	$port.Close()

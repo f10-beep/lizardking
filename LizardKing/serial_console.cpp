@@ -21,9 +21,19 @@
 //   ~k setting value                    SET_SETTINGS_VALUES (u16)
 //   ~r                                  toggle the LizardKing ball trace
 //   ~m                                  dump the LizardKing keymap
+//   ~K pad zone k0..k7                  set a LizardKing keymap page (hex)
+//   ~T [name [value]]                   list / set LizardKing feel constants
 static void tildeCommand(const char *a)
 {
 	char kind = *a++;
+	if (kind == 'K') {
+		lkSetKeymapPage(a);
+		return;
+	}
+	if (kind == 'T') {
+		lkTune(a);
+		return;
+	}
 	long v[6] = {};
 	char *e;
 	for (int i = 0; i < 6; i++) {
@@ -51,6 +61,11 @@ static void tildeCommand(const char *a)
 		g_lkScrollTrace = !g_lkScrollTrace;
 		Serial.printf("# scroll trace %s\n",
 			      g_lkScrollTrace ? "ON" : "off");
+		return;
+	case 'y':
+		g_lkGyroTrace = !g_lkGyroTrace;
+		Serial.printf("# gyro trace %s\n",
+			      g_lkGyroTrace ? "ON" : "off");
 		return;
 	case 'g':
 		lkGuideBeat();
@@ -95,7 +110,7 @@ static void tildeCommand(const char *a)
 		u16(v[1]);
 		break;
 	default:
-		Serial.println("# ~p/~c/~t/~s/~k/~r/~m/~w/~g/~h/~b");
+		Serial.println("# ~p/~c/~t/~s/~k/~r/~m/~K/~T/~w/~g/~h/~b");
 		return;
 	}
 	bool ok = relayEnqueue(rid, p, n, kind != 'k', 0xFF);
@@ -114,7 +129,8 @@ static void tildeCommand(const char *a)
 //   FR        reprint the flight recorder from the last watchdog hang
 void serialConsolePoll()
 {
-	static char line[24];
+	// long enough for a key map page (~K)
+	static char line[48];
 	static uint8_t li = 0;
 	while (Serial.available()) {
 		char c = Serial.read();

@@ -4,8 +4,8 @@
 // The Guide teaches the controller; the controller's Guide button and its
 // chords are the only interface, and nothing on screen is clickable. Two
 // switches:
-//   Guide    a window showing the controller three times (no pad, one pad,
-//            both pads touched) with every button labelled, the key map,
+//   Guide    a window showing the controller twice (gamepad, keyboard)
+//            with every button labelled, the key map,
 //            and the chords; the layer your thumbs select lights up as you
 //            use it. A medium press of the Guide button opens it, any
 //            Guide press closes it.
@@ -16,7 +16,8 @@
 // PC nothing, everything goes to the Guide alone, held by a heartbeat ("~g"
 // every 250 ms from the window thread; "~h" hands the controller back). The
 // cursor is parked in a corner meanwhile. A key, click or wheel turn from
-// another keyboard or mouse puts the Guide away.
+// another keyboard or mouse (software-made included), the controller
+// disconnecting, or a click on the tray icon puts the Guide away.
 //
 // It reads the puck's serial port. The key table comes from the firmware
 // ("~m" -> "KM" lines), so it always matches the flashed layout. "KS" lines
@@ -74,12 +75,12 @@ namespace LizardKing
 	// held buttons each layer owns, by where they were pressed
 	struct InputState
 	{
-		public uint Buttons, Own0, Own1, Own2;
+		public uint Buttons, Own0, Own1;
 		public int LT, RT, LX, LY, RX, RY, LPX, LPY, RPX, RPY;
 
 		public uint Own(int layer)
 		{
-			return layer == 0 ? Own0 : layer == 1 ? Own1 : Own2;
+			return layer == 0 ? Own0 : Own1;
 		}
 
 		public bool Has(uint mask)
@@ -90,10 +91,13 @@ namespace LizardKing
 
 	// status ("KT"): charge as in the controller's report 0x43 (1
 	// discharging, 2 charging, 4 charged, 0 unknown); signal in -dBm, 0 = no
-	// sample yet; the key map switches, owned by the puck
+	// sample yet; the key map switches, owned by the puck; Dev, the puck's
+	// key map or feel constants changed from the console since it booted
 	struct CtlStatus
 	{
-		public bool Connected, KeymapOn, KeymapLow;
+		public bool Connected, KeymapLow, Dev;
+		// the key map: 0 off, 1 large, 2 small
+		public int KeymapSize;
 		public int Battery, Charge, Rssi;
 
 		// 1..4 bars, 0 unknown
@@ -163,10 +167,11 @@ namespace LizardKing
 		}
 
 		// Whether a WM_INPUT should dismiss the Guide: a key, click or
-		// wheel turn from a device that is not the puck. The puck's own
-		// keys (its Esc included) are what the Guide is there to try out;
-		// pointer movement counts for nothing, and input with no device
-		// (injected by software) is ignored.
+		// wheel turn from anything but the puck. The puck's own keys (its
+		// Esc included) are what the Guide is there to try out; pointer
+		// movement counts for nothing. Input with no device, injected by
+		// software, counts: Steam Input's desktop mouse and keyboard
+		// arrive that way.
 		public static bool Dismisses(IntPtr input)
 		{
 			int hdr = 8 + 2 * IntPtr.Size;
@@ -182,7 +187,7 @@ namespace LizardKing
 					return false;
 				int type = Marshal.ReadInt32(buf, 0);
 				IntPtr dev = Marshal.ReadIntPtr(buf, 8);
-				bool foreign = dev != IntPtr.Zero && !IsPuck(dev);
+				bool foreign = dev == IntPtr.Zero || !IsPuck(dev);
 				if (type == 1) {
 					// RAWKEYBOARD: Message at 8 (key down or sys key
 					// down)
@@ -223,18 +228,38 @@ namespace LizardKing
 	{
 		static readonly Dictionary<int, string> Names =
 			new Dictionary<int, string> {
-				{ 0x28, "Enter" }, { 0x29, "Esc" }, { 0x2A, "Bksp" },
-				{ 0x2B, "Tab" }, { 0x2C, "Space" }, { 0x2D, "-" },
+				// ISO 9995-7 symbols where they read as well as
+				// the word (Esc, Del and Ins read better as
+				// words); the arrows as triangles, all head; the
+				// Copilot ("AI") key as the sparkle AI features
+				// share, no brand
+				{ 0x28, "\u23CE" }, { 0x29, "Esc" },
+				{ 0x2A, "\u232B" }, { 0x2B, "\u21E5" },
+				{ 0x2C, "Space" }, { 0x2D, "-" },
 				{ 0x2E, "=" }, { 0x2F, "[" }, { 0x30, "]" },
 				{ 0x31, "\\" }, { 0x33, ";" }, { 0x34, "'" },
 				{ 0x35, "`" }, { 0x36, "," }, { 0x37, "." },
-				{ 0x38, "/" }, { 0x49, "Ins" }, { 0x4A, "Home" },
-				{ 0x4B, "PgUp" }, { 0x4C, "Del" }, { 0x4D, "End" },
-				{ 0x4E, "PgDn" }, { 0x4F, "\u2192" }, { 0x50, "\u2190" },
-				{ 0x51, "\u2193" }, { 0x52, "\u2191" },
+				{ 0x38, "/" }, { 0x49, "Ins" }, { 0x4A, "\u21F1" },
+				{ 0x4B, "\u21DE" }, { 0x4C, "Del" },
+				{ 0x4D, "\u21F2" }, { 0x4E, "\u21DF" },
+				{ 0x4F, "\u25B6" }, { 0x50, "\u25C0" },
+				{ 0x51, "\u25BC" }, { 0x52, "\u25B2" },
 				// numpad operators and decimal
 				{ 0x54, "/" }, { 0x55, "*" }, { 0x56, "-" },
 				{ 0x57, "+" }, { 0x63, "." },
+				// the keys nothing else needs
+				{ 0x39, "Caps" }, { 0x46, "PrtSc" },
+				{ 0x47, "ScrLk" }, { 0x48, "Pause" },
+				{ 0x53, "NumLk" }, { 0x58, "⏎" },
+				// media keys: the puck's own codes, past the
+				// keyboard page
+				{ 0xF0, "\uD83D\uDD09" }, { 0xF1, "\uD83D\uDD0A" },
+				{ 0xF2, "\u23EE" }, { 0xF3, "\u23ED" },
+				{ 0xF4, "\u23EF" }, { 0xF5, "\uD83D\uDD07" },
+				// Sleep and Power as IEC 5009 draws them: the
+				// moon and the power symbol
+				{ 0xEB, "\u23fe" }, { 0xEC, "\u23fb" },
+				{ 0xED, "M4" }, { 0xEE, "M5" }, { 0xEF, "\u2726" },
 			};
 		// US layout: what Shift turns each main-block symbol into
 		const string Plain = "1234567890-=[]\\;',./`";
@@ -247,8 +272,10 @@ namespace LizardKing
 				return (shift ? char.ToUpper(c) : c).ToString();
 			}
 			// numpad keys ignore Shift
-			if ((code >= 0x54 && code <= 0x57) || code == 0x63)
+			if ((code >= 0x54 && code <= 0x58) || code == 0x63)
 				return Names[code];
+			if (code >= 0x59 && code <= 0x62)
+				return ((code - 0x58) % 10).ToString();
 			string label;
 			if (code >= 0x1E && code <= 0x26)
 				label = (code - 0x1D).ToString();
@@ -664,7 +691,7 @@ namespace LizardKing
 			} else if (f[0] == "KK" && f.Length == 3) {
 				int pad = int.Parse(f[1]), zone = int.Parse(f[2]);
 				app.Post(delegate { app.OnPress(pad, zone); });
-			} else if (f[0] == "KB" && f.Length == 15) {
+			} else if (f[0] == "KB" && f.Length == 14) {
 				var inp = new InputState();
 				inp.Buttons = Convert.ToUInt32(f[1], 16);
 				inp.LT = int.Parse(f[2]);
@@ -679,16 +706,16 @@ namespace LizardKing
 				inp.RPY = int.Parse(f[11]);
 				inp.Own0 = Convert.ToUInt32(f[12], 16);
 				inp.Own1 = Convert.ToUInt32(f[13], 16);
-				inp.Own2 = Convert.ToUInt32(f[14], 16);
 				app.Post(delegate { app.OnInput(inp); });
-			} else if (f[0] == "KT" && f.Length == 7) {
+			} else if (f[0] == "KT" && f.Length == 8) {
 				var st = new CtlStatus();
 				st.Connected = f[1] == "1";
 				st.Battery = int.Parse(f[2]);
 				st.Charge = int.Parse(f[3]);
 				st.Rssi = int.Parse(f[4]);
-				st.KeymapOn = f[5] == "1";
+				st.KeymapSize = int.Parse(f[5]);
 				st.KeymapLow = f[6] == "1";
+				st.Dev = f[7] == "1";
 				app.Post(delegate { app.OnStatus(st); });
 			} else if (f.Length == 1 && f[0] == "KG") {
 				app.Post(delegate { app.ToggleGuide(); });
@@ -722,7 +749,7 @@ namespace LizardKing
 				var inp = new InputState();
 				inp.Buttons = order[(int)(t * 2.5) % order.Length] |
 					      Btn.LPadT;
-				inp.Own0 = inp.Own1 = inp.Own2 = inp.Buttons & ~Btn.LPadT;
+				inp.Own0 = inp.Own1 = inp.Buttons & ~Btn.LPadT;
 				inp.LX = (int)(28 * Math.Cos(t * 2));
 				inp.LY = (int)(28 * Math.Sin(t * 2));
 				inp.RX = (int)(20 * Math.Sin(t * 3));
@@ -770,7 +797,8 @@ namespace LizardKing
 			demoStatus.Battery = 72;
 			demoStatus.Charge = 1;
 			demoStatus.Rssi = 58;
-			demoStatus.KeymapOn = demoStatus.KeymapLow = true;
+			demoStatus.KeymapSize = 1;
+			demoStatus.KeymapLow = true;
 			app.Post(delegate { app.OnStatus(demoStatus); });
 			var fake = new Thread(delegate() { FakeInput(app); });
 			fake.IsBackground = true;
@@ -822,13 +850,45 @@ namespace LizardKing
 			}
 			string pct = st.Battery > 0 ? st.Battery + "%" : "?";
 			float pw = g.MeasureString(pct, font).Width;
-			const float bw = 26, bh = 13;
-			float bx = x + 10, px = bx + bw + 4, sx = px + pw + 2;
+			float bx = x + 10, px = bx + BatteryW + 4, sx = px + pw + 2;
 			Chip(g, x, cy, sx + 4 * 6 + 8 - x, h);
+			Battery(g, st, bx, cy);
+			using (var b = new SolidBrush(BatteryInk(st)))
+				g.DrawString(pct, font, b,
+					     new RectangleF(px, cy - h / 2, pw + 4, h),
+					     Left);
+			Signal(g, st, sx, cy);
+		}
 
-			bool lowBatt = st.Battery > 0 && st.Battery <= 15 &&
-				       st.Charge != 2;
-			Color ink = lowBatt ? Theme.Hex("e0a040") : Theme.Ink;
+		// The small key map's: the battery over the signal, no percentage,
+		// in a tile centred on (cx, cy)
+		public static void PaintStacked(Graphics g, CtlStatus st, float cx,
+						float cy)
+		{
+			using (var b = new SolidBrush(Theme.Cell))
+			using (var p = Shape.Round(new RectangleF(cx - 22, cy - 24, 44,
+								   48),
+						   10))
+				g.FillPath(b, p);
+			if (!st.Connected)
+				return;
+			Battery(g, st, cx - BatteryW / 2 - 1, cy - 9);
+			Signal(g, st, cx - 11, cy + 10);
+		}
+
+		const float BatteryW = 26;
+
+		static Color BatteryInk(CtlStatus st)
+		{
+			bool low = st.Battery > 0 && st.Battery <= 15 && st.Charge != 2;
+			return low ? Theme.Hex("e0a040") : Theme.Ink;
+		}
+
+		// the gauge, its left edge at bx, centred on cy
+		static void Battery(Graphics g, CtlStatus st, float bx, float cy)
+		{
+			const float bw = BatteryW, bh = 13;
+			Color ink = BatteryInk(st);
 			var body = new RectangleF(bx, cy - bh / 2, bw, bh);
 			using (var pen = new Pen(ink, 1.5f))
 			using (var b = new SolidBrush(ink)) {
@@ -855,10 +915,12 @@ namespace LizardKing
 					using (var y = new SolidBrush(Theme.Flash))
 						g.FillPolygon(y, bolt);
 				}
-				g.DrawString(pct, font, b,
-					     new RectangleF(px, cy - h / 2, pw + 4, h),
-					     Left);
 			}
+		}
+
+		// four bars from sx, their feet just below cy
+		static void Signal(Graphics g, CtlStatus st, float sx, float cy)
+		{
 			for (int i = 0; i < 4; i++) {
 				float bar = 4 + i * 3;
 				bool lit = i < st.Bars;
@@ -904,7 +966,7 @@ namespace LizardKing
 
 		static readonly Font TitleFont = new Font("Segoe UI Semibold", 17f,
 							  GraphicsUnit.Pixel);
-		static readonly Font Small = new Font("Segoe UI Semibold", 14f,
+		public static readonly Font Small = new Font("Segoe UI Semibold", 14f,
 						      GraphicsUnit.Pixel);
 		static readonly StringFormat Left = new StringFormat {
 			Alignment = StringAlignment.Near,
@@ -958,17 +1020,38 @@ namespace LizardKing
 	// the Guide window's key map panel.
 	class KeyOverlay : Form
 	{
-		public const int LayerKbd = 2, Zones = 9, Center = 4;
+		public const int LayerKbd = 1, Zones = 9, Center = 4;
 		public const int PadR = 0, PadL = 1;
 		// zone index (NW N NE / W C E / SW S SE) -> position in the
 		// firmware's ring order (clockwise from N), -1 for the inert center
 		static readonly int[] RingPos = { 7, 0, 1, 6, -1, 2, 5, 4, 3 };
-		const int CellSize = 84, Gap = 6, PadGap = 60;
+		// The grids' geometry. Large has the hints round each key; small,
+		// the expert's, each zone's own key alone, half the padding round
+		// it, and the battery and signal stacked between the pads.
+		struct Geo
+		{
+			public int Cell, Gap, PadGap, Margin, Pt;
+			public float Corner;
+			public bool Hints;
+
+			public int Grid
+			{
+				get { return 3 * Cell + 2 * Gap; }
+			}
+		}
+		static readonly Geo Large = new Geo {
+			Cell = 84, Gap = 6, PadGap = 60, Margin = 20, Pt = 20,
+			Corner = 22, Hints = true,
+		};
+		static readonly Geo Compact = new Geo {
+			Cell = 44, Gap = 4, PadGap = 64, Margin = 12, Pt = 15,
+			Corner = 12, Hints = false,
+		};
 		const int HeaderH = TitleBar.Height;
 		// hint glyphs sit this far from the cell center, toward their
 		// direction
 		const int MiniOff = 29;
-		const int BigPt = 20, MiniPt = 9;
+		const int MiniPt = 9;
 		// a step's glyph transition: just long enough to be seen
 		const double AnimMs = 60;
 		// a typed key's cell starts at full flash and fades back
@@ -977,16 +1060,17 @@ namespace LizardKing
 		// snapping (the zone entered lights up at once)
 		const double LeaveMs = 80;
 
-		readonly int grid = 3 * CellSize + 2 * Gap;
 		readonly Stopwatch clock = Stopwatch.StartNew();
 		readonly System.Windows.Forms.Timer frames =
 			new System.Windows.Forms.Timer();
-		readonly Dictionary<int, Font> fonts = new Dictionary<int, Font>();
+		readonly Dictionary<string, Font> fonts =
+			new Dictionary<string, Font>();
 		readonly Dictionary<int, double> flashes =
 			new Dictionary<int, double>();
 		readonly StringFormat centered = new StringFormat {
 			Alignment = StringAlignment.Center,
 			LineAlignment = StringAlignment.Center,
+			FormatFlags = StringFormatFlags.NoWrap,
 		};
 
 		int[,,] keymap;
@@ -1040,8 +1124,7 @@ namespace LizardKing
 			TopMost = true;
 			BackColor = Theme.Bg;
 			Opacity = 0;
-			ClientSize = new Size(2 * grid + PadGap + 40,
-					      grid + 84 + HeaderH);
+			FitSize();
 			SetStyle(ControlStyles.AllPaintingInWmPaint |
 					 ControlStyles.OptimizedDoubleBuffer |
 					 ControlStyles.UserPaint,
@@ -1082,16 +1165,17 @@ namespace LizardKing
 		// the key grids alone, with their margin: what the Guide centers
 		public Size GridSize
 		{
-			get { return new Size(ClientSize.Width, grid + 40); }
+			get {
+				return new Size(2 * Large.Grid + Large.PadGap +
+							2 * Large.Margin,
+						Large.Grid + 2 * Large.Margin);
+			}
 		}
 
 		// the key grids and legend, below this overlay's title bar
 		public Size KeysSize
 		{
-			get {
-				return new Size(ClientSize.Width,
-						ClientSize.Height - HeaderH);
-			}
+			get { return new Size(GridSize.Width, GridSize.Height + 44); }
 		}
 
 		// key map on and the Guide closed: the overlay shows itself while
@@ -1120,10 +1204,28 @@ namespace LizardKing
 
 		Font FontOf(int pt, bool bold)
 		{
-			int key = pt * 2 + (bold ? 1 : 0);
+			return FontOf("Segoe UI", pt, bold);
+		}
+
+		// GDI+ doesn't fall back to another font for a missing glyph, so
+		// the key symbols name the font that has them
+		static string FamilyOf(string s)
+		{
+			foreach (char c in s) {
+				if (char.IsSurrogate(c))
+					return "Segoe UI Emoji";
+				if (c >= 0x21D0)
+					return "Segoe UI Symbol";
+			}
+			return "Segoe UI";
+		}
+
+		Font FontOf(string family, int pt, bool bold)
+		{
+			string key = family + pt + (bold ? "b" : "");
 			Font f;
 			if (!fonts.TryGetValue(key, out f)) {
-				f = new Font("Segoe UI", pt,
+				f = new Font(family, pt,
 					     bold ? FontStyle.Bold : FontStyle.Regular,
 					     GraphicsUnit.Point);
 				fonts[key] = f;
@@ -1140,7 +1242,31 @@ namespace LizardKing
 			Location = new Point(s.X + (s.Width - Width) / 2, s.Y + y);
 		}
 
-		// the puck owns the position (Guide + left pad click)
+		bool small;
+
+		void FitSize()
+		{
+			var c = Compact;
+			ClientSize = small ?
+				new Size(2 * c.Grid + c.PadGap + 2 * c.Margin,
+					 c.Grid + 2 * c.Margin) :
+				new Size(GridSize.Width, GridSize.Height + 44 + HeaderH);
+		}
+
+		// the puck owns the size (Guide + left pad click)
+		public bool Small
+		{
+			set {
+				if (value == small)
+					return;
+				small = value;
+				FitSize();
+				Place();
+				Invalidate();
+			}
+		}
+
+		// the puck owns the position (Guide + right pad click)
 		public bool Low
 		{
 			set {
@@ -1254,12 +1380,20 @@ namespace LizardKing
 				g.DrawPath(pen, bp);
 			if (keymap == null || state.Layer != LayerKbd)
 				return;
+			if (small) {
+				var c = Compact;
+				PaintKeys(g, c, false, true, 1);
+				StatusArt.PaintStacked(g, status,
+						       c.Margin + c.Grid + c.PadGap / 2f,
+						       c.Margin + c.Grid / 2f);
+				return;
+			}
 			TitleBar.Paint(g, ClientSize.Width, "Key map", status,
-				       new[] { new Chord(low ? "Guide + left pad: move up" :
-							       "Guide + left pad: move down",
+				       new[] { new Chord(low ? "Guide + right pad: move up" :
+							       "Guide + right pad: move down",
 							 0, false) });
 			g.TranslateTransform(0, HeaderH);
-			PaintKeys(g, true, true, 1);
+			PaintKeys(g, Large, true, true, 1);
 		}
 
 		// The key grids in KeysSize coordinates; the Guide window scales
@@ -1268,6 +1402,12 @@ namespace LizardKing
 		// level 1 full strength, lower fades toward the panel colour
 		public void PaintKeys(Graphics g, bool legend, bool glyphs,
 				      double level)
+		{
+			PaintKeys(g, Large, legend, glyphs, level);
+		}
+
+		void PaintKeys(Graphics g, Geo geo, bool legend, bool glyphs,
+			       double level)
 		{
 			if (keymap == null)
 				return;
@@ -1281,7 +1421,7 @@ namespace LizardKing
 				e = 1 - Math.Pow(1 - p, 3);
 			}
 			for (int pad = 0; pad < 2; pad++)
-				PaintPad(g, pad, now, e, glyphs, level);
+				PaintPad(g, geo, pad, now, e, glyphs, level);
 			if (!legend)
 				return;
 			using (var b = new SolidBrush(Theme.Dim))
@@ -1293,19 +1433,20 @@ namespace LizardKing
 					     centered);
 		}
 
-		void PaintPad(Graphics g, int pad, double now, double e,
+		void PaintPad(Graphics g, Geo geo, int pad, double now, double e,
 			      bool glyphs, double level)
 		{
 			Func<Color, Color> fade = c => Theme.Mix(Theme.Panel, c, level);
-			int x0 = pad == PadL ? 20 : 20 + grid + PadGap;
+			int cs = geo.Cell, m = geo.Margin;
+			int x0 = pad == PadL ? m : m + geo.Grid + geo.PadGap;
 			int other = OtherZone(state, pad), ro = other / 3,
 			    co = other % 3;
 			bool anim = animStart >= 0 && animPad[pad];
 			bool live = glyphs && state.Layer == LayerKbd;
 			for (int z = 0; z < Zones; z++) {
-				int x = x0 + (z % 3) * (CellSize + Gap);
-				int y = 20 + (z / 3) * (CellSize + Gap);
-				float cx = x + CellSize / 2f, cy = y + CellSize / 2f;
+				int x = x0 + (z % 3) * (cs + geo.Gap);
+				int y = m + (z / 3) * (cs + geo.Gap);
+				float cx = x + cs / 2f, cy = y + cs / 2f;
 				bool here = live && z == OwnZone(state, pad);
 				// how lit the cell is: 1 under the thumb, easing out
 				// from 1 for the zone it just left
@@ -1321,9 +1462,9 @@ namespace LizardKing
 					fill = Theme.Mix(Theme.Flash, fill,
 							 Math.Min(1, (now - t0) / FlashMs));
 				// the grid's outer corners are rounded like the pad itself
-				const float big = 22;
+				float big = geo.Corner;
 				using (var cell = Shape.Round(
-					       new RectangleF(x, y, CellSize, CellSize),
+					       new RectangleF(x, y, cs, cs),
 					       z == 0 ? big : Shape.Small,
 					       z == 2 ? big : Shape.Small,
 					       z == 8 ? big : Shape.Small,
@@ -1343,25 +1484,23 @@ namespace LizardKing
 				string label = pos >= 0 ?
 					Hid.Label(keymap[pad, other, pos], state.Shift) :
 					"";
-				Color ink = label.Length > 0 ? Theme.Ink : Theme.Dim;
-				// a dot marks a key zone with nothing on it; the centers
-				// are inert by design and stay blank
-				if (label.Length == 0 && pos >= 0)
-					label = "\u00b7";
+				Color ink = Theme.Ink;
 				float bx = cx, by = cy;
-				Font font = FontOf(BigPt, true);
+				Font font = FontOf(geo.Pt, true);
 				if (anim && z != Center) {
 					float k = (float)((1 - e) * MiniOff);
 					bx += animDc[pad] * k;
 					by += animDr[pad] * k;
 					int pt = (int)Math.Round(MiniPt +
-								 (BigPt - MiniPt) * e);
+								 (geo.Pt - MiniPt) * e);
 					font = FontOf(pt, e > 0.5);
 					ink = Theme.Mix(Theme.Dim, ink, e);
 				}
-				DrawCentered(g, label, font, fade(ink), bx, by);
+				// names shrink to the letters' span, clear of the hints
+				DrawFit(g, label, font, fade(ink), bx, by,
+					geo.Hints ? cs / 2 : cs - 8, x, x + cs);
 
-				if (pos < 0)
+				if (pos < 0 || !geo.Hints)
 					continue;
 				// one zone further from where the other thumb rests now
 				for (int d = 0; d < Zones; d++) {
@@ -1372,20 +1511,34 @@ namespace LizardKing
 					string alt = Hid.Label(keymap[pad, r2 * 3 + c2, pos],
 							       state.Shift);
 					if (alt.Length > 0)
-						DrawCentered(g, alt, FontOf(MiniPt, false),
-							     fade(Theme.Dim),
-							     cx + (d % 3 - 1) * MiniOff,
-							     cy + (d / 3 - 1) * MiniOff);
+						DrawFit(g, alt, FontOf(MiniPt, false),
+							fade(Theme.Dim),
+							cx + (d % 3 - 1) * MiniOff,
+							cy + (d / 3 - 1) * MiniOff,
+							cs / 2 - 6, x, x + cs);
 				}
 			}
 		}
 
-		void DrawCentered(Graphics g, string s, Font f, Color c, float x,
-				  float y)
+		// Draws s centred on (x, y), shrunk to fit maxW and slid inside the
+		// cell's span lo..hi, so names (Esc, PgUp) sit where letters do.
+		void DrawFit(Graphics g, string s, Font f, Color c, float x, float y,
+			     float maxW, float lo, float hi)
 		{
+			string family = FamilyOf(s);
+			if (family != f.Name)
+				f = FontOf(family, (int)f.SizeInPoints, f.Bold);
+			float w = g.MeasureString(s, f).Width;
+			if (w > maxW) {
+				f = FontOf(family,
+					   Math.Max(6, (int)(f.SizeInPoints * maxW / w)),
+					   f.Bold);
+				w = g.MeasureString(s, f).Width;
+			}
+			x = Math.Max(lo + w / 2, Math.Min(hi - w / 2, x));
 			using (var b = new SolidBrush(c))
 				g.DrawString(s, f, b,
-					     new RectangleF(x - 40, y - 30, 80, 60),
+					     new RectangleF(x - w, y - 30, 2 * w, 60),
 					     centered);
 		}
 	}
@@ -1496,13 +1649,13 @@ namespace LizardKing
 
 		public static readonly PointF PadL = P(449, 628), PadR = P(1015, 628);
 
-		// layer: 0 no pad, 1 one pad, 2 both pads (decides what the pads
+		// layer: 0 controller, 1 keyboard (decides what the pads
 		// show); colours are already faded for inactive panels. Pressed
 		// controls fill with hiFill and outline with hiPen; sticks move,
 		// triggers fill as they are pulled, a dot follows each thumb on
 		// its pad.
 		public static void Draw(Graphics g, int layer, Color ink,
-					Color hidden, Color padFill, Font padFont,
+					Color hidden, Font padFont,
 					InputState inp, Color hiFill, Color hiLine)
 		{
 			using (var body = new Pen(ink, 5))
@@ -1511,7 +1664,6 @@ namespace LizardKing
 			using (var dash = new Pen(hidden, 4))
 			using (var hiPen = new Pen(hiLine, 5))
 			using (var inkB = new SolidBrush(ink))
-			using (var fillB = new SolidBrush(padFill))
 			using (var hiB = new SolidBrush(hiFill)) {
 				dash.DashPattern = new float[] { 3, 2.5f };
 				body.LineJoin = LineJoin.Round;
@@ -1623,28 +1775,28 @@ namespace LizardKing
 					g.TranslateTransform(c.X, c.Y);
 					g.RotateTransform(i == 0 ? 3 : -3);
 					using (var r = RoundRect(0, 0, 312, 312, 34)) {
-						// tinted only while a thumb is on it
+						// lit only while clicked: the dot shows the
+						// touch
 						if (click)
 							g.FillPath(hiB, r);
-						else if (touch)
-							g.FillPath(fillB, r);
 						g.DrawPath(click ? hiPen : pen, r);
 					}
-					if (layer == 2) {
+					if (layer == 1) {
 						for (int k = 1; k < 3; k++) {
 							float o = -156 + k * 104;
 							g.DrawLine(thin, o, -156, o, 156);
 							g.DrawLine(thin, -156, o, 156, o);
 						}
 					}
-					if (layer == 1) {
+					if (layer == 0) {
 						var sf = new StringFormat {
 							Alignment = StringAlignment.Center,
 							LineAlignment = StringAlignment.Center,
 						};
-						g.DrawString(i == 0 ? "scroll" : "cursor", padFont,
-							     inkB,
-							     new RectangleF(-156, -40, 312, 80), sf);
+						// the word, and the mouse button its click is
+						g.DrawString(i == 0 ? "scroll\nM2" : "pointer\nM1",
+							     padFont, inkB,
+							     new RectangleF(-156, -80, 312, 160), sf);
 					}
 					if (touch) {
 						float px = (i == 0 ? inp.LPX : inp.RPX) * 140f / 32;
@@ -1715,27 +1867,6 @@ namespace LizardKing
 			new Slot("qam", 732, 660, Side.Bottom, 732),
 		};
 
-		static Dictionary<string, string> Desk(string qam, string ls,
-						       string rs, string face)
-		{
-			var d = new Dictionary<string, string> {
-				{ "lt", "Backspace" }, { "lb", "Tab" },
-				{ "dpad", "Arrows" }, { "l4", "Shift" },
-				{ "l5", "Ctrl" }, { "rt", "Space" },
-				{ "rb", "Enter" }, { "r4", "Win" }, { "r5", "Alt" },
-				{ "back", "Esc" }, { "start", "Menu key" },
-			};
-			if (qam != null)
-				d["qam"] = qam;
-			if (ls != null)
-				d["ls"] = ls;
-			if (rs != null)
-				d["rs"] = rs;
-			if (face != null)
-				d["face"] = face;
-			return d;
-		}
-
 		// whether the control a label names is in use right now
 		public static bool Active(string id, InputState i)
 		{
@@ -1771,26 +1902,20 @@ namespace LizardKing
 				{ "rt", "RT" }, { "rb", "RB" }, { "face", "Y|X|B|A" },
 				{ "rs", "Stick · R3" }, { "r4", "A" }, { "r5", "X" },
 				{ "back", "Back" }, { "xbox", "Guide" },
-				{ "start", "Start" }, { "qam", "Print Screen" },
+				{ "start", "Start" }, { "qam", "M3" },
 			},
-			Desk("Play / pause", "Vol · track\nClick: middle",
-			     "Click: back", "PgUp|Home|End|PgDn"),
-			Keyboard(),
+			// with both thumbs on the pads the d-pad, face and center
+			// buttons are out of reach, so they have no keys
+			new Dictionary<string, string> {
+				{ "lt", "Backspace" }, { "lb", "Tab" },
+				{ "l4", "Shift" }, { "l5", "Ctrl" },
+				{ "rt", "Space" }, { "rb", "Enter" },
+				{ "r4", "Win" }, { "r5", "Alt" },
+			},
 		};
-
-		// with both thumbs on the pads the d-pad and the two small center
-		// buttons are out of reach, so the keyboard layer leaves them out
-		static Dictionary<string, string> Keyboard()
-		{
-			var d = Desk(null, null, null, null);
-			d.Remove("dpad");
-			d.Remove("back");
-			d.Remove("start");
-			return d;
-		}
 	}
 
-	// The Guide: no pad and one pad on the left; both pads on the right,
+	// The Guide: the gamepad on the left; the keyboard on the right,
 	// with the key map under it. The layer your thumbs select is outlined;
 	// the others stay readable but faded.
 	class GuideWindow : Form
@@ -1930,30 +2055,28 @@ namespace LizardKing
 				Invalidate();
 		}
 
-		// 0 no pad (top left), 1 one pad (bottom left), 2 both pads (the
-		// whole right column)
+		// 0 controller (the left column), 1 keyboard (the right column)
 		Rectangle Panel(int i)
 		{
 			int w = (ClientSize.Width - 3 * Gap) / 2;
-			int h = (ClientSize.Height - HeaderH - 2 * Gap) / 2;
-			if (i == 2)
-				return new Rectangle(2 * Gap + w, HeaderH, w, 2 * h + Gap);
-			return new Rectangle(Gap, HeaderH + i * (h + Gap), w, h);
+			return new Rectangle(Gap + i * (w + Gap), HeaderH, w,
+					     ClientSize.Height - HeaderH - Gap);
 		}
 
 		// where a panel's controller drawing goes: below its title, the
-		// height of a left-column panel
+		// whole controller panel, the top half of the keyboard's (the key map
+		// goes under it)
 		Rectangle ArtArea(int i)
 		{
 			var q = Panel(i);
-			return new Rectangle(q.X + 10, q.Y + 36, q.Width - 20,
-					     Panel(0).Height - 44);
+			int h = i == KeyOverlay.LayerKbd ? (q.Height - Gap) / 2 : q.Height;
+			return new Rectangle(q.X + 10, q.Y + 36, q.Width - 20, h - 44);
 		}
 
 		Rectangle KeyArea()
 		{
-			var q = Panel(2);
-			var a = ArtArea(2);
+			var q = Panel(KeyOverlay.LayerKbd);
+			var a = ArtArea(KeyOverlay.LayerKbd);
 			return new Rectangle(a.X, a.Bottom + 8, a.Width,
 					     q.Bottom - a.Bottom - 20);
 		}
@@ -1972,8 +2095,8 @@ namespace LizardKing
 						    Shape.Window - 1))
 				g.DrawPath(pen, bp);
 			PaintHeader(g);
-			string[] names = { "No pad", "One pad", "Both pads" };
-			for (int i = 0; i < 3; i++)
+			string[] names = { "Controller", "Keyboard" };
+			for (int i = 0; i < 2; i++)
 				if (pe.ClipRectangle.IntersectsWith(Panel(i)))
 					PaintController(g, i, names[i]);
 			PaintKeyMap(g, KeyArea());
@@ -1984,18 +2107,25 @@ namespace LizardKing
 			var chords = new List<Chord> {
 				new Chord("Guide: close", 0, false),
 				// each says what it will do now
-				new Chord(status.KeymapOn ? "Guide + right pad: hide key map" :
-							    "Guide + right pad: show key map",
+				new Chord(new[] { "Guide + left pad: show key map",
+						  "Guide + left pad: small key map",
+						  "Guide + left pad: hide key map" }
+						  [status.KeymapSize % 3],
 					  LitLevel(ChordKeymap), false),
-				new Chord(status.KeymapLow ? "Guide + left pad: key map up" :
-							     "Guide + left pad: key map down",
+				new Chord(status.KeymapLow ? "Guide + right pad: key map up" :
+							     "Guide + right pad: key map down",
 					  LitLevel(ChordMove), false),
+				new Chord("Guide + Back: controller off", 0, false),
 			};
 			// until installed, the next step is outlined
 			if (!installed)
 				chords.Add(new Chord("Guide + Start: install",
 						     LitLevel(ChordInstall), true));
-			TitleBar.Paint(g, ClientSize.Width, "LizardKing Guide", status,
+			// a puck tuned from the console isn't showing what ships
+			TitleBar.Paint(g, ClientSize.Width,
+				       status.Dev ? "LizardKing Guide · dev overrides" :
+						    "LizardKing Guide",
+				       status,
 				       chords.ToArray());
 		}
 
@@ -2041,8 +2171,7 @@ namespace LizardKing
 			return p;
 		}
 
-		void PaintFrame(Graphics g, Rectangle q, double level, int pads,
-				string name)
+		void PaintFrame(Graphics g, Rectangle q, double level, string name)
 		{
 			double f = (level - Dim) / (1 - Dim);
 			using (var p = Rounded(q, 12)) {
@@ -2055,29 +2184,16 @@ namespace LizardKing
 					g.DrawPath(pen, p);
 			}
 			Color ink = Theme.Mix(Theme.Dim, Theme.Ink, f);
-			// two small squares: which pads are touched
-			for (int i = 0; i < 2; i++) {
-				var r = new Rectangle(q.X + 14 + i * 20, q.Y + 14, 14, 14);
-				bool filled = i < pads;
-				using (var b = new SolidBrush(ink))
-				using (var pen = new Pen(ink, 1.5f))
-				using (var sq = Shape.Round(r, 3)) {
-					if (filled)
-						g.FillPath(b, sq);
-					else
-						g.DrawPath(pen, sq);
-				}
-			}
 			using (var b = new SolidBrush(ink))
 				g.DrawString(name, head, b,
-					     new RectangleF(q.X + 60, q.Y + 6, 300, 30),
+					     new RectangleF(q.X + 16, q.Y + 6, 300, 30),
 					     left);
 		}
 
 		// What a panel shows. Buttons light in the panel of the layer that
 		// owns them, so one held across a layer change stays lit where it
 		// acts. Only the panel in use follows thumbs and sticks. Triggers:
-		// the pull in the gamepad panel, and in the desktop panels the
+		// the pull in the controller panel, and in the keyboard panel the
 		// Space / Backspace key, on or off at the firmware's thresholds.
 		InputState PanelInput(int layer, bool on)
 		{
@@ -2099,11 +2215,10 @@ namespace LizardKing
 			var q = Panel(layer);
 			bool on = state.Layer == layer;
 			double k = Level(layer);
-			PaintFrame(g, q, k, layer, name);
+			PaintFrame(g, q, k, name);
 			// faded panels mix their ink toward the panel colour
 			Color ink = Theme.Mix(Theme.Panel, Theme.Ink, k);
 			Color hidden = Theme.Mix(Theme.Panel, Theme.Dim, k);
-			Color padFill = Theme.Mix(Theme.Panel, Theme.AccentFill, k);
 			Color lead = Theme.Mix(Theme.Panel, Theme.Dim, k);
 			Color hiFill = Theme.Mix(Theme.Panel, Theme.AccentFill,
 						 Math.Max(k, 0.8));
@@ -2119,7 +2234,7 @@ namespace LizardKing
 			g.ScaleTransform(s, s);
 			g.TranslateTransform(-w.X, -w.Y);
 			var inp = PanelInput(layer, on);
-			ControllerArt.Draw(g, layer, ink, hidden, padFill, label, inp,
+			ControllerArt.Draw(g, layer, ink, hidden, label, inp,
 					   hiFill, hiLine);
 			PaintLabels(g, layer, ink, lead, hiLine, inp);
 			g.Restore(st);
@@ -2368,8 +2483,8 @@ namespace LizardKing
 			g.TranslateTransform(-Crop.X, -Crop.Y);
 			var inp = new InputState();
 			inp.Buttons = Btn.Steam;
-			ControllerArt.Draw(g, 0, Theme.Dim, Theme.Dim, Theme.AccentFill,
-					   padFont, inp, Theme.AccentFill, Theme.Flash);
+			ControllerArt.Draw(g, 0, Theme.Dim, Theme.Dim, padFont, inp,
+					   Theme.AccentFill, Theme.Flash);
 			using (var arrow = new Pen(Theme.Flash, 18)) {
 				arrow.CustomEndCap = new AdjustableArrowCap(3, 3);
 				g.DrawLine(arrow, GuideX, Crop.Y + 20, GuideX,
@@ -2537,7 +2652,7 @@ namespace LizardKing
 
 		void Apply()
 		{
-			Keys.Allowed = !guideUp && (!hasSwitches || last.KeymapOn);
+			Keys.Allowed = !guideUp && (!hasSwitches || last.KeymapSize > 0);
 			guide.Opacity = guideUp ? 0.995 : 0;
 			if (Link != null) {
 				if (guideUp)
@@ -2557,6 +2672,11 @@ namespace LizardKing
 			cursor = Cursor.Position;
 			var s = Screen.PrimaryScreen.Bounds;
 			Cursor.Position = new Point(s.Right - 1, s.Bottom - 1);
+		}
+
+		public bool GuideUp
+		{
+			get { return guideUp; }
 		}
 
 		public void ToggleGuide()
@@ -2620,10 +2740,14 @@ namespace LizardKing
 
 		public void OnStatus(CtlStatus st)
 		{
-			if (hasSwitches && st.KeymapOn != last.KeymapOn) {
+			// without the controller the Guide button can't put it away
+			if (guideUp && !st.Connected)
+				ToggleGuide();
+			if (hasSwitches && st.KeymapSize != last.KeymapSize) {
 				guide.Light(GuideWindow.ChordKeymap);
 				if (!guideUp)
-					toast.Say(st.KeymapOn ? "Key map on" : "Key map off");
+					toast.Say(new[] { "Key map off", "Key map large",
+							  "Key map small" }[st.KeymapSize % 3]);
 			}
 			if (hasSwitches && st.KeymapLow != last.KeymapLow) {
 				guide.Light(GuideWindow.ChordMove);
@@ -2634,7 +2758,8 @@ namespace LizardKing
 			hasSwitches = true;
 			last = st;
 			Keys.Low = st.KeymapLow;
-			Keys.Allowed = !guideUp && st.KeymapOn;
+			Keys.Small = st.KeymapSize == 2;
+			Keys.Allowed = !guideUp && st.KeymapSize > 0;
 			guide.OnStatus(st);
 			Keys.Status = st;
 			if (StatusChanged != null)
@@ -2750,9 +2875,14 @@ namespace LizardKing
 			tray.ContextMenuStrip = Menu(app, tray);
 			tray.Text = Tip("Waiting for the puck");
 			// the tray is a signpost to the Guide button, not a second
-			// way in
+			// way in; it is a way out, the one click the Guide window
+			// (click-through) can't offer
 			tray.MouseClick += delegate(object o, MouseEventArgs e) {
-				if (e.Button == MouseButtons.Left)
+				if (e.Button != MouseButtons.Left)
+					return;
+				if (app.GuideUp)
+					app.ToggleGuide();
+				else
 					app.ShowHint();
 			};
 			tray.Visible = true;

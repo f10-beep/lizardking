@@ -4,8 +4,8 @@ The product behaviour, implemented mostly in `LizardKing/mode_lizardking.cpp`.
 
 Goal: one fixed, predictable layout that behaves the same everywhere: in
 games, on the desktop, at the Windows login screen and in admin (UAC)
-prompts. There is no Steam handoff and nothing changes by context. Which
-trackpads are touched is the only thing that picks the layer.
+prompts. There is no Steam handoff and nothing changes by context. What the
+thumbs touch is the only thing that picks the layer.
 
 Every decision here is made for the user, never handed to them as a setting
 (see "Opinionated by design" in `AGENTS.md`).
@@ -17,7 +17,7 @@ One composite device, pid.codes test ID `1209:0001`:
 | Interface | What | Why |
 |-----------|------|-----|
 | 0 | Xbox 360 XInput pad (interface 0 of the genuine pad) | the most widely supported gamepad |
-| 1 | HID keyboard + mouse + media keys | needs no driver, so it works at login and in UAC prompts |
+| 1 | HID keyboard + mouse + media keys + Sleep / Power | needs no driver, so it works at login and in UAC prompts |
 | 2–3 | CDC serial | the Guide's link and the console (`~b` reboots into the UF2 bootloader for `make flash`) |
 | 4 | Mass storage: read-only guide drive | carries the Windows Guide to any PC (see Guide drive) |
 
@@ -58,15 +58,16 @@ One composite device, pid.codes test ID `1209:0001`:
 The controller's Steam button is the Guide button, and it sits a level
 above the rest: it reaches LizardKing before Windows.
 
-Only a press begun in the gamepad layer (no pad touched) opens anything.
-With a thumb on a pad the Guide button is a chord about to happen, where
-opening Big Picture or the Guide by accident is easy. Opening the Guide is
-a hands-off moment anyway: you stop to read.
+Only a press with no thumb on a pad, from start to finish, opens anything.
+With a thumb on a pad the Guide button is a chord about to happen, and a
+thumb landing mid-press is one on its way, where opening Big Picture or the
+Guide by accident is easy. Opening the Guide is a hands-off moment
+anyway: you stop to read.
 
-- **Tap** (released within 400 ms, nothing else pressed), gamepad layer:
+- **Tap** (released within 400 ms, nothing else pressed), no pad touched:
   Windows gets a normal Xbox Guide press, so Game Bar and the Steam
   overlay still open, just on release.
-- **Medium press** (held past 400 ms, alone), gamepad layer: LizardKing's
+- **Medium press** (held past 400 ms, alone), no pad touched: LizardKing's
   own, and it acts the moment the hold passes 400 ms, so the Guide or the
   drive appearing is the sign it worked; holding on changes nothing. With
   the Guide running it opens the Guide; without it, it shows or hides the
@@ -80,51 +81,103 @@ a hands-off moment anyway: you stop to read.
 
 | Chord | Does | Needs the Guide running |
 |-------|------|-------------------------|
-| Guide + right pad click | key map on / off | yes |
-| Guide + left pad click | key map up / down | yes |
+| Guide + left pad click | key map large / small / off | yes |
+| Guide + right pad click | key map up / down | yes |
+| Guide + Back | the controller off, as Steam's "turn off controller" | no |
 | Guide + Start | install the Guide | yes |
-| Guide + right stick click | gyro on / off (planned) | no |
 
 - A switch confirms on the pads: two bumps for on, one for off. Moving the
   key map and asking to install bump once. A chord that needs the Guide,
   pressed without it, bumps once and does nothing.
-- The back buttons are plain buttons: no gestures, no delay. In the mouse
-  and keyboard layers all four together send Ctrl + Shift + Alt + Win,
-  which Windows reads as the Office key.
+- The back buttons are plain buttons: no gestures, no delay. In the
+  keyboard layer all four together send Ctrl + Shift + Alt + Win, which
+  Windows reads as the Office key.
 
 ## Layers
 
-| Pads touched | Layer |
-|--------------|-------|
-| none | gamepad |
-| one | mouse |
-| both | keyboard |
+Two layers, and every hand position means one thing:
 
+| Thumbs on | Means |
+|-----------|-------|
+| both pads | keyboard |
+| anything else | controller: an Xbox gamepad whose pads are the mouse |
+
+- **The pads are always the mouse** outside the keyboard: the right pad
+  moves the pointer, with the gyro (see Gyro aiming), and its click is the
+  left button; the left pad scrolls and its click is the right button.
+- **The buttons are always the gamepad's** outside the keyboard, so a
+  button never changes meaning mid-game.
+- **Both pads: keyboard.** The back buttons become the modifiers, the
+  triggers Space and Backspace, the bumpers Tab and Enter, and the pads
+  type (see Keyboard layer).
+- **Modifiers reach the mouse by being held.** A held button keeps the
+  meaning it had when pressed until released, so Ctrl or Shift pressed with
+  both thumbs down stays held when the left thumb lifts: Ctrl-click,
+  Shift-drag. Alt-Tab works within the keyboard layer.
+- A click held into the keyboard stays held, as any held button does, so
+  a drag can take a modifier midway: land the left thumb, press it on a
+  back button, lift the left thumb and carry on dragging. Long drags lean
+  on the gyro, since lifting the right thumb lets go of the click.
 - A layer change takes effect after 30 ms, so a brushed pad doesn't
-  flicker the layer.
-- **A held button keeps the meaning it had when pressed** until released.
-  Sticks and triggers in use follow the same rule. Pad clicks use the
-  undebounced layer, so a quick tap still counts as a mouse click.
-- Sticks and triggers do nothing in the mouse and keyboard layers yet.
+  flicker the layer. Entering the keyboard plays a dull tone on both pads,
+  leaving it a softer one.
+- Sticks and triggers in use keep their meaning across a layer change, as
+  held buttons do. Pad clicks use the undebounced layer, so a quick tap
+  still counts as a mouse click.
 
-| Button | Gamepad layer | Mouse / keyboard layers |
-|--------|---------------|-------------------------|
+| Button | Controller layer | Keyboard layer |
+|--------|---------------|----------------|
 | R4 / L4 / R5 / L5 | A / B / X / Y | Win / Shift / Alt / Ctrl |
-| A / B / X / Y | A / B / X / Y | mouse: PgDn / End / Home / PgUp |
-| D-pad | D-pad | mouse: arrow keys |
+| A / B / X / Y | A / B / X / Y | — |
+| D-pad | D-pad | — |
 | LB / RB | LB / RB | Tab / Enter |
-| LT / RT (light pull) | LT / RT | Backspace / Space |
-| View / Menu | Start / Back | mouse: Menu key / Esc |
+| LT / RT | LT / RT | Backspace / Space (a light pull) |
+| View / Menu | Start / Back | — |
 | Steam | the Guide button (see above) | chords only |
-| L3 / R3 | L3 / R3 | mouse: middle click / Back button |
-| Left stick | left stick | mouse: up/down volume, left/right prev/next track |
-| QAM | Print Screen | mouse: play/pause |
-| Right pad click | — | left click |
-| Left pad click | — | right click |
+| QAM | middle click (M3) | — |
+| Right pad | pointer, with gyro | types |
+| Right pad click | left click (M1) | types |
+| Left pad | scroll | types |
+| Left pad click | right click (M2) | types |
+
+Esc, the arrows, the page keys and the media keys are key map keys (see
+Keyboard layer), so the buttons stay the gamepad's.
 
 The back buttons carry the primary functions because they are the easiest
-to reach. In the desktop layers they are the modifiers, so Shift and Ctrl
-can be held with the left hand while the right thumb drives the cursor.
+to reach. In the keyboard layer they are the modifiers, so Shift and Ctrl
+can be held with the left hand while a thumb lifts to drive the cursor.
+
+## Gyro aiming
+
+- **Gyro is part of the right pad:** while the thumb is on it, outside the
+  keyboard, the trackball and the gyro both move the pointer, as on the
+  original Steam Controller. The pad covers big moves, the gyro fine aim;
+  lifting the thumb pauses both, so the aim ratchets. A game that wants
+  WASD gets it from Steam Input on the gamepad's left stick, and still
+  takes our mouse.
+- No switch: the thumb on the pad is the switch. Gyro's dead zones keep
+  the pointer still while the controller is merely held.
+- Not tied to the right stick's touch, as many gyro setups are: that suits
+  games where the stick and the gyro aim the same thing, and the right pad
+  is a better aim than a stick.
+- Turning is measured about gravity ("player space", as in JoyShockMapper),
+  so it feels the same however the controller is tilted in the hands;
+  pitch is the controller's own tilt.
+- Sensitivity rises with speed: 8 cursor counts per degree up to 15°/s,
+  for careful aim, easing to 20 at 75°/s and above, so a fast swing still
+  turns far. Below 5°/s the input blends into the average of the last 8
+  reports (32 ms), fading out as speed rises: hand tremor is steadied, and
+  deliberate movement isn't lagged.
+- Gyro shares the trackball's pressure and lift dead zones (the same radius
+  at the same moment), because pressing, clicking and rolling off the pad
+  tilt the controller too. It takes none of the trackball's smoothing or
+  momentum: lifting the thumb stops it dead, which is the ratchet.
+- The controller's gyro reads 16.4 counts per degree per second and drifts
+  a few counts: whenever it isn't aiming and sits still, the bias follows
+  it, so the cursor doesn't creep.
+- The puck asks the controller for raw IMU samples on every connect in
+  LizardKing (Steam can leave them switched off, and the setting persists
+  in the controller).
 
 ## Keyboard layer (prototype)
 
@@ -152,12 +205,17 @@ can be held with the left hand while the right thumb drives the cursor.
   center: no pulse and nothing typed, so the thumb feels that nothing is
   there. It stays dead until the thumb returns to the center.
 - Layout: `docs/KEYBOARD_LAYOUT.md`. Vowels on the left thumb, consonants
-  on the right; numbers with the other thumb resting down; F-keys with it in
-  the bottom outer corner; brackets with the thumbs spread outward.
+  on the right; the pages follow a keyboard: numbers with the other thumb
+  resting up, the numpad with it in the top inner corner, F-keys in the top
+  outer corner, the rarer letters with it outward, punctuation in the
+  spare zones of the number and outward pages,
+  navigation, Esc and media in the bottom outer corner, the remaining keys
+  and the mouse's back and forward drawn inward, Sleep and Power drawn in
+  and down.
 - The center zones do nothing, alone or together.
 - Key clicks pulse for twice as long as mouse clicks (3,000 / 1,400 µs);
   0x81 has no gain setting.
-- Index fingers (mouse and keyboard layers): RT = Space, LT = Backspace
+- Index fingers (keyboard layer): RT = Space, LT = Backspace
   (a light pull: on at 24/255, off at 12, with a click pulse on that side),
   RB = Enter, LB = Tab. Back buttons stay Shift / Ctrl / Alt / Win.
 
@@ -181,41 +239,46 @@ screen is clickable: every window is click-through. Two independent
 switches, both on the Guide button:
 
 - **The Guide** (medium press on, any Guide press off): a large window.
-  No pad and one pad on the left; both pads on the right, with the live
+  The gamepad on the left; the keyboard on the right, with the live
   key map under it. Each panel draws the controller with every button
   labelled for that layer; the layer the thumbs select is outlined and the
   others fade. The outlined panel responds live: pressed buttons fill and
   their labels light up, stick caps move in their rings, and a dot follows
-  each thumb on its pad. A held button stays lit in the panel of the layer
+  each thumb on its pad; a pad lights only while it is clicked. A held button stays lit in the panel of the layer
   it was pressed in, as it keeps acting there, even after the thumbs move
-  on. Triggers fill as they are pulled in the gamepad panel; in the
+  on. Triggers fill as they are pulled in the controller panel; in the
   desktop panels they are keys (Space, Backspace) and fill on or off at the
   firmware's thresholds. The key map shows its keys only while both thumbs
-  are down; a dot marks a zone with no key, and the inert centers stay
-  blank. A cheat sheet lists the Guide button's gestures and chords;
+  are down; a zone with no key stays blank, like the inert centers. A cheat sheet lists the Guide button's gestures and chords;
   each says what it will do now ("hide key map", "key map up"), and lights
-  up when it is used. The Guide button is labelled in the gamepad panel
+  up when it is used. The Guide button is labelled in the controller panel
   only, the one layer where it does more than chords.
   While it is up the Guide is a practice space: nothing from the
   controller reaches the apps behind it, cursor included (the puck sends
   the PC "nothing pressed"). The Guide parks the cursor in a screen corner
   while it is up and puts it back when it goes away. A key, click or wheel
-  turn from another keyboard or mouse also puts it away, as a safety net.
+  turn from another keyboard or mouse, software-made ones like Steam
+  Input's included, also puts it away, as a safety net; so do the
+  controller disconnecting (the Guide button can't reach it then) and a
+  click on the tray icon.
   Switching layers, the panel entered lights up at once and the one left
   fades back over 80 ms, which takes the edge off quick switches.
-- **The key map** (Guide + right pad click): the keyboard overlay alone, in
-  a small titled panel, shown while the Guide is down and both thumbs are
+- **The key map** (Guide + left pad click: large, small, off): the
+  keyboard overlay alone. Large is a titled panel,
+  shown while the Guide is down and both thumbs are
   on the pads: both pads' 3x3 grids for wherever the other thumb rests,
   each thumb's zone highlighted. Small faded glyphs around each key show
   what it becomes if the other thumb steps one zone that way; new glyphs
   grow out of their hints (60 ms); the zone a thumb leaves fades back over
   80 ms while the one entered lights at once; letters show lower case and
   Shift shows shifted forms; a typed key's cell flashes and fades over
-  75 ms. Guide + left pad click moves it between one and two thirds of the
-  screen height. Both key map chords, used with the Guide closed, are
-  announced with a brief word in the middle of the screen ("Key map off",
-  "Key map top"). Each pad's grid has rounded outer corners, like the pad
-  itself.
+  75 ms. Small, the expert's, is each zone's own key alone in cells with
+  half the padding, and the battery over the signal between the pads (no
+  percentage): no hints, title or legend. Guide + right pad click moves it
+  between one and two thirds of the screen height. Both key map chords, used with the
+  Guide closed, are announced with a brief word in the middle of the screen
+  ("Key map small", "Key map top"). Each pad's grid has rounded outer
+  corners, like the pad itself.
 
 The puck owns both switches and the key map position (in RAM, so a reboot
 starts with the key map on and low); the Guide follows what the puck
@@ -232,8 +295,8 @@ How it works:
   (`~m`), so it always matches what's flashed. `KS layer zoneR zoneL
   shift` arrives whenever the layer, a thumb's zone or Shift changes; `KK
   pad zone` for every typed key; `KG` on a Guide on/off press; `KI` on
-  Guide + Start; `KT connected battery charge signal keymap low` about once
-  a second and at once when the key map is switched or moved; `KB
+  Guide + Start; `KT connected battery charge signal keymap low` about
+  once a second and at once when a switch changes; `KB
   buttons lt rt lx ly rx ry lpx lpy rpx rpy own0 own1 own2` for the live
   drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, the
   held buttons each layer owns in hex, sent on a change at most every
@@ -337,9 +400,6 @@ The letter layout proposal is in `docs/KEYBOARD_LAYOUT.md`.
   click). It stays at 10 px for the whole click, so presses, releases and
   light lift-offs land exactly where aimed. Past the radius the cursor is
   pulled along at its edge, so drags work.
-- **Drag with both pads:** while a pad click is held as a mouse button,
-  touching the other pad does not open the keyboard; both pads move the
-  cursor, so one thumb holds the button and the other steers.
 - **Circular scroll (left pad):** one turn = 24 notches, clockwise scrolls
   down. Starting a scroll takes turning past a dead zone: a half turn at
   20% of the pad radius, shrinking to 0 at 65%, so a click near the center
@@ -393,8 +453,9 @@ What did not work, so it isn't tried again:
 - **Movement:** a faint 0x83 HAPTIC_LFO_TONE (−24 dB, 200 Hz, 20 units) per
   24 px of cursor travel, touching or gliding, and per scroll notch. Tone
   side 0 = **left** pad, the reverse of 0x81.
-- **Keyboard layer on:** a full-strength 0x83 tone (0 dB, 200 Hz, 30
-  units) on both pads, deliberately dull so it never reads as a click.
+- **Keyboard layer on / off:** a 0x83 tone (200 Hz, 30 units) on both
+  pads, −12 dB on and −18 dB off, deliberately dull so it never reads as a
+  click.
 - 0x81 on-time changes only length; 0x83 gain sets strength.
 - The controller's own pad ticks are switched off in this mode (`id9 = 0`):
   they are as strong as a click.
@@ -411,11 +472,21 @@ What did not work, so it isn't tried again:
 | `~s side script gain_db` | 0x85 HAPTIC_SCRIPT |
 | `~k setting value` | SET_SETTINGS_VALUES |
 | `~r` | toggles a one-line-per-report trace of the trackball |
+| `~y` | toggles a trace of the IMU: `Y us gx gy gz ax ay az` per fresh report, raw |
 | `~w` | toggles a trace of the scroll wheel: `W` per report, and `WS units hires=0/1` per wheel report sent (1/120 notches while the host enabled the multiplier) |
 | `~m` | dumps the keyboard key table (`KM` lines) |
+| `~K pad zone k0..k7` | replaces a key table page, in hex as `KM` prints it, until reboot |
+| `~T [name [value]]` | lists the feel constants, or shows or sets one by its source name, until reboot |
 | `~b` | reboots into the UF2 bootloader (`make flash`) |
 | `~g` | Guide practice mode: hold the host's input for another second |
 | `~h` | Guide practice mode over: hand the input back now |
+
+`~K` and `~T` let the key map and the feel constants (the `static int` /
+`static float` LK_ values in `mode_lizardking.cpp`) be tried without a
+reflash; `make keymap` pushes the source's key map and `make tune SET="name
+value"` sets a constant (`tools/tune.ps1`). Nothing is saved: a reboot
+restores what ships, and while anything differs the Guide's title reads
+"dev overrides". A value that feels right goes into the source.
 
 Plain commands, for tuning and diagnosis:
 

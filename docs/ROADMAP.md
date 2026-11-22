@@ -27,12 +27,9 @@ pass.
 
 Launch feature (in the first release): gyro aiming.
 
-- **Gyro aiming** (launch), as mouse movement: active while the right thumb rests on
-  the right stick (lift to ratchet), in the gamepad layer only. One binary
-  on/off gesture, Guide + right stick click, persisted across power
-  cycles, confirmed by two bumps for on and one for off, and shown in the
-  Guide next to battery and signal. Try it in a shooter and in Elite
-  (tilt to look) before settling.
+- **Gyro aiming** (launch): built, in the grip (docs/DESIGN.md, Gyro
+  aiming). Tune the sensitivity curve and smoothing by hand in games
+  before release.
 - **Lift-off protection.** Lightening the fast-swipe smoothing (follow 30%)
   gave stronger flicks but slightly weaker lift-off protection; retune.
 - **Scroll momentum.** Tune the fling threshold and the coast by feel.
@@ -41,3 +38,11 @@ Launch feature (in the first release): gyro aiming.
 - **Pad pressure in the Guide's key map:** a subtle meter on each pad with
   notches at the click thresholds.
 - **Steam Input on.** Make the pads work with Steam Input enabled.
+- **LizardKing when wired.** A controller turned on while plugged into the
+  PC by USB connects there directly, as a Steam Controller, and the puck
+  never hears it: LizardKing is gone until the cable comes out. Make it
+  work wired too.
+- **Keeping a tuned key map or constant through a reboot.** The console
+  already changes both live (`~K`, `~T`); saving them to the puck's flash
+  would let an owner keep a customization. Likely a popular request once
+  LizardKing is out; not needed for our own tuning, so deferred.

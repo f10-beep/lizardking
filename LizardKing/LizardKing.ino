@@ -130,6 +130,7 @@ void loop()
 		faultDiagTrace(FR_SAVE, 0);
 		saveBonds();
 	}
+	cfgTask();
 	// Each stage leaves a breadcrumb, so after a watchdog reset the next
 	// boot reports which stage wedged.
 	faultDiagSetStage(0);

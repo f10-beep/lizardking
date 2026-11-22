@@ -44,7 +44,10 @@ uint8_t cfgExtRead(uint8_t index);
 void cfgExtWrite(uint8_t index, uint8_t value);
 
 void loadCfg();
+// marks the settings changed; cfgTask() writes them when it can't hurt
 void saveCfg();
+// call from loop()
+void cfgTask();
 // First boot after a UF2 install: wipe the file system (bonds and settings).
 // Call after InternalFS.begin(), before anything is loaded.
 void wipeOnFreshInstall();

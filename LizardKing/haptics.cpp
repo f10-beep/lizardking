@@ -40,7 +40,7 @@ void hapticSendShutdown(uint8_t slot)
 	// Tell the puck presentation layer to show this slot (or all, for 0xFF broadcast) cleanly DISCONNECTED to
 	// Steam and hold it there through the controller's post-off F1 tail -- otherwise the dying replies bounce
 	// the connection state (phantom reconnect / never-removed). Covers every power-off path (Steam 0x9F, the
-	// Steam+Y chord, host suspend) since they all funnel through here.
+	// Guide + Back chord, host suspend) since they all funnel through here.
 	puckNotePowerOff(slot);
 }
 
@@ -433,13 +433,11 @@ void hapticInit()
 		g_rumble80Ms[s] = 0;
 	}
 }
-// Modes that read motion from the controller's RF IMU samples. None yet:
-// gyro aiming (docs/ROADMAP.md) will.
+// LizardKing reads the controller's RF IMU samples for gyro aiming.
 static const uint32_t IMU_KEEP_MS = 5000;
 static bool modeWantsImu(uint8_t m)
 {
-	(void)m;
-	return false;
+	return m == MODE_LIZARDKING;
 }
 // Steam can leave the controller's persisted IMU mode off, and it survives across pucks. Every emulated
 // gyro mode needs the raw RF samples that setting suppresses, so write raw accel + gyro for this slot.

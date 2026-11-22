@@ -6,11 +6,13 @@ the layout.
 
 What your thumbs touch picks the layer:
 
-| Thumbs on the pads | Layer |
+| Thumbs on | Layer |
 |---|---|
-| none | Xbox gamepad |
-| one | mouse (a virtual trackball, with scrolling) |
-| both | keyboard |
+| both pads | keyboard |
+| anything else | controller: an Xbox gamepad whose pads are the mouse (a virtual trackball with gyro, and scrolling) |
+
+Modifiers held on the keyboard stay held when a thumb lifts to the cursor:
+Ctrl-click, Shift-drag.
 
 It is opinionated on purpose: it arrives with one confident design, one
 layout and one way to do each thing, and never hands you a setting to decide

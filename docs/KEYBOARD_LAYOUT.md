@@ -9,118 +9,202 @@ Status: **applied** (`KEYMAP` in `LizardKing/mode_lizardking.cpp`).
 - Clicking one of a pad's 8 outer zones types a key. Which key depends on
   where the **other** thumb is resting. That gives 16 click zones × 9
   resting zones = 144 keys.
-- "Home" means the other thumb rests in its center. "Page N" means the
-  other thumb rests in its top zone, and so on for the other zones.
+- "Home" means the other thumb rests in its center. "The outward page"
+  means it rests in its outer side zone (W for the left thumb, E for the
+  right), and so on for the other zones.
+- The pages follow a keyboard: numbers and F-keys on the top pages (N and
+  the top outer corners); letters across the middle, the rarer ones a reach
+  outward, as a keyboard's letter rows run wide; punctuation in the spare
+  zones of the number and outward pages; the control keys on the bottom
+  outer corners; the bottom pages free. Every key a keyboard has, and the
+  mouse's back and forward buttons, is somewhere: the numpad on the top
+  inner corners, the keys that are neither F-keys nor typing on the inward
+  pages, Sleep and Power alone on the bottom inner corners.
 
 ## Letters: placed by letter pairs
 
 `tools/layout/LayoutOpt.cs` scores a layout on how often each English letter
-pair occurs (Peter Norvig's counts from about 3 trillion letters) and how
-far the thumbs must move to type it:
+pair occurs (Peter Norvig's counts from about 3 trillion letters) and the
+effort of the thumb moves to type it:
 
-- Both thumbs move at the same time, so a step costs the longer of the two
+- Both thumbs move at the same time, so a step costs the larger of the two
   moves.
+- A move costs effort per zone crossed, by direction, from the thumb's
+  point of view: up 1.0, outward (toward the hand) 1.2, inward (toward the
+  controller's center) 1.4, down 1.8. A diagonal combines its two parts
+  like a distance.
 - Using the same thumb twice in a row costs extra, because it has to
   release and press again.
 - Resting the other thumb on a page zone costs a little extra.
 
-The two extra costs are judgment calls, so the search was run under four
-weightings. The best layouts all share the same shape:
+It reads the shipped letters from `KEYMAP` in the firmware, scores them,
+and searches the same pages for the best layout it can find, so any change
+to the letters can be checked against it (see Reproducing).
 
-1. **All vowels plus Y on one pad,** in its upper zones; consonants on the
-   other pad. English alternates consonants and vowels, so the thumbs mostly
-   take turns, which is the cheapest pattern. It is also the easiest to
-   remember: one vowel thumb, one consonant thumb.
-2. **T and H go on each pad's top zone, on the "other thumb in N" page.**
-   With both thumbs parked in their top zones, each thumb's top zone is both
-   a key and the page selector for the other. So T, H, TH and HT need no
-   movement at all.
-3. The other common consonants (S N R C L P G B) are single clicks; the rare
-   letters sit on page N.
+The extra costs are judgment calls, so the original search, which counted
+every direction alike, was run under four weightings. The best layouts all
+shared a shape that the current search, with the directional efforts and
+the rarer letters on the outward pages, keeps:
+
+1. **All vowels plus Y on one pad;** consonants on the other pad. English
+   alternates consonants and vowels, so the thumbs mostly take turns, which
+   is the cheapest pattern. It is also the easiest to remember: one vowel
+   thumb, one consonant thumb.
+2. **T and H go on each pad's outer side zone, on the outward pages.** With
+   both thumbs parked outward, each thumb's outer zone is both a key and the
+   page selector for the other. So T, H, TH and HT need no movement at all.
+3. The other common consonants (S N R C L P G B F) are single clicks; the
+   rare letters sit on the outward pages.
 
 Applied layout (vowels on the left thumb; the mirror image scores the
-same):
+same), the best the search finds but for Q, moved off the home page so the
+vowel pad keeps two zones for `,` and `.` (0.02% of the score):
 
 ```
-other thumb CENTER (single clicks)        other thumb in N (page N)
+other thumb CENTER (single clicks)        thumbs outward (the outward pages)
 
    left pad        right pad               left pad        right pad
-   I  E  U         C  S  P                 X  H  Q         W  T  F
-   A  ·  O         N  ·  R                 K  ·  '         D  ·  M
-   ,  Y  .         G  L  B                 ;  /  -         J  V  Z
+   Y  O  .         G  N  C                 \  ;  '         Z  D  W
+   E  ·  U         L  ·  S                 H  ·  Q         V  ·  T
+   A  I  ,         B  R  F                 X  K  /         J  M  P
 ```
 
-- About **21–23% less thumb travel than v0**, depending on the weighting.
-- The free corners of the vowel pad hold `,` and `.` as single clicks, next
-  to the letters they usually follow. Page N's free zones hold
-  `' ; / -`.
-- The common word "the": right N (T, left thumb up) → left N (H, right
-  thumb up) → left N again (E, after the right thumb returns to center).
+- The common word "the": right pad E (T, left thumb outward) → left pad W
+  (H, right thumb outward) → left pad W again (E: the right thumb returns
+  to center, the left doesn't move).
+- The outward pages are lopsided, 4 letters to 8; the vowel side's spare
+  zones hold the rest of the punctuation, `; '` on top, `\` in the corner
+  and `/` below.
 
 Things the score does not capture, worth judging by feel:
 
 - T is the second most common letter, and it needs the left thumb resting
-  up. The model says that's worth it because of TH, HT, TE and ST, but it
-  is the boldest choice here.
-- The search could give the vowel pad its own page N row. In every run it
-  left those zones mostly for rare letters, so they are available for more
-  punctuation.
+  outward. The model says that's worth it because of TH, HT, TE and ST, but
+  it is the boldest choice here.
+- Punctuation isn't scored; letters are all the counts cover.
 
 ## Everything else: placed to be memorable
 
-**Numbers: other thumb resting in its bottom zone (S).** The top five zones
-of each pad, read like a book (NW, N, NE, W, E):
+**Numbers: other thumb resting in its top zone (N),** as the number row
+tops a keyboard. The row's punctuation runs along the top, where a keyboard
+has it: `` ` `` in the corner before 1, `- =` after 0, the brackets
+mirrored between. The digits run in a U below: 1 down the left pad's outer
+side, round the bottom to 5 on its inner side, then 6 on the right pad's
+inner side round to 0 on its outer side. Each digit is a zone from the
+next, and 5 and 6 face each other across the pads.
 
 ```
    left pad        right pad
-   1  2  3         6  7  8
-   4  ·  5         9  ·  0
-   −  +  =         *  /  .
+   `  ·  [         ]  -  =
+   1  ·  5         6  ·  0
+   2  3  4         7  8  9
 ```
 
-The bottom three zones hold numpad keys (`. / * + -`), which duplicate
-symbols elsewhere exactly as a keyboard's numpad does and ignore Shift.
-Everywhere else each symbol appears once, as its main-keyboard key, so
-Shift does what it does on a keyboard (`/` gives `?`, `-` gives `_`). `=`
-has no numpad key, so it is the main `=` (Shift gives `+`). The numpad `.`
-types Delete if Num Lock is off.
+These are the main keyboard's keys, so Shift does what it does on a
+keyboard (`1` gives `!`, `[` gives `{`). Each symbol in the map appears
+once as its main-keyboard key; the numpad, which duplicates some, has its
+own pages.
 
-**F-keys: other thumb resting in its bottom outer corner** (right thumb SE
-for the left pad, left thumb SW for the right pad). F1–F10 sit exactly where
-1–0 are, and F11 and F12 take the two bottom-center zones:
+**F-keys: other thumb resting in its top outer corner** (right thumb NE for
+the left pad, left thumb NW for the right pad), the row above the numbers.
+F1–F10 sit exactly where 1–0 are, and F11 and F12 take the two top
+centers:
 
 ```
-   left pad        right pad
-   F1 F2 F3        F6 F7 F8
-   F4  · F5        F9  · F10
-   ·  F11 ·        ·  F12 ·
+   left pad          right pad
+   ·    F11 ·        ·    F12 ·
+   F1   ·   F5       F6   ·   F10
+   F2   F3  F4       F7   F8  F9
 ```
 
 So F5 is "5, with the other thumb slid out to the corner".
 
-**Brackets: thumbs spread outward.** With the right thumb resting E,
-the left pad's W zone is `[` and its N zone is `` ` ``. With the left thumb
-resting W, the right pad's E zone is `]` and its N zone is `\`. Shift gives
-`{ ~ } |`.
+**The bottom pages (other thumb resting in its bottom zone, S)** are free,
+and stay empty beside Sleep and Power.
 
-Each bracket's zone is the other bracket's page selector, so with both
-thumbs parked outward `[` and `]` alternate with no movement, the same
-pairing that makes T and H free on page N.
+**The keys that aren't F-keys or typing: thumbs drawn inward** (left thumb
+E for the right pad, right thumb W for the left pad). The mouse's back
+button (M4) is the left pad's E zone and forward (M5) the right pad's W
+zone; each is the other's page selector, so with both thumbs parked inward
+they alternate without moving, as T and H do outward.
 
-Navigation needs no keyboard page: the d-pad is the arrow keys, and the
-face buttons are PgUp / PgDn / Home / End in the mouse layer.
+The right pad's top row is a keyboard's Print Screen, Scroll Lock and
+Pause, with Num Lock mirroring Scroll Lock on the left pad. The AI key (✦,
+Windows' Copilot key) takes the right pad's E, where both thumbs point the
+same way; Caps Lock sits on the left pad's outer edge, as on a keyboard;
+Insert and Delete mirror each other in the bottom centers; the inner bottom
+corners stay empty, beside Sleep and Power. There is no Menu key: Shift +
+F10 does the same.
+
+```
+   left pad              right pad
+   ·     NumLk  ·        PrtSc  ScrLk  Pause
+   Caps  ·      M4       M5     ·      ✦
+   ·     Ins    ·        ·      Del    ·
+```
+
+**The numpad: other thumb resting in its top inner corner** (right thumb
+NW for the left pad, left thumb NE for the right pad), next to the number
+pages and laid out like them, for Alt codes and games that bind the
+numpad. Its operators run along the top, as they top a numpad: `/ * - +
+.` and Enter across both pads.
+
+```
+   left pad        right pad
+   /  *  −         +  .  ⏎
+   1  ·  5         6  ·  0
+   2  3  4         7  8  9
+```
+
+These are real numpad keys, so Windows treats them as it treats a
+keyboard's: with Num Lock off, or with Shift held while it's on, 3 is Page
+Down, `.` is Delete, and so on.
+
+**Sleep and Power: thumbs drawn in and down** (left thumb SE for the right
+pad, right thumb SW for the left pad). Sleep (⏾) is the left pad's SE zone
+and Power (⏻) the right pad's SW zone, the pages' paired spots, as M4 and M5
+are above them. Nothing else is on these pages, so nothing near them is
+clicked by mistake. Windows treats them as the PC's own buttons: Sleep
+sleeps, Power does what the power button is set to do.
+
+```
+   left pad        right pad
+   ·  ·  ·         ·  ·  ·
+   ·  ·  ·         ·  ·  ·
+   ·  ·  ⏾         ⏻  ·  ·
+```
+
+**Control keys: other thumb resting in its bottom outer corner** (left
+thumb SW for the right pad, right thumb SE for the left pad). The right pad
+is a nav cluster: the arrows by direction, with Home / PgUp / End / PgDn in
+the corners. The left pad puts Esc top left, as on a keyboard, play/pause
+top center, tracks either side, and the volume keys along the bottom row:
+
+```
+   left pad            right pad
+   Esc   Play  ·       Home  ▲  PgUp
+   Prev  ·     Next    ◀     ·  ▶
+   Mute  Vol−  Vol+    End   ▼  PgDn
+```
+
+The buttons stay the gamepad's outside the keyboard, so these keys live
+here rather than on the d-pad and face buttons.
 
 **Still open:** whether you want the vowels on the right thumb instead.
 
 ## Reproducing
 
+Save https://norvig.com/ngrams/count_2l.txt as `build\layout\count_2l.txt`
+(the site turns away scripted downloads), then from the repository root:
+
 ```powershell
 tools\layout\build.cmd
-build\layout\LayoutOpt.exe count_2l.txt --seeds 6 --iters 150000 --same 1.0 --page 0.3
+build\layout\LayoutOpt.exe
 ```
 
-`build.cmd` uses the C# compiler that ships with Windows' .NET Framework.
-`count_2l.txt` is from https://norvig.com/ngrams/count_2l.txt. Each seed
-takes about half a second; the random sequence differs from the original
-search, but the best layouts come out with the same shape and score
-(about 77% of the v0 layout's cost).
+It prints the shipped layout's score, the best layout its search finds on
+the same pages, and how much more the shipped one costs. Options set the
+weights (`--same 1.0 --page 0.3 --up 1.0 --down 1.8 --out 1.2 --in 1.4` by
+default) and the search (`--seeds 6 --iters 150000`); each seed takes about
+a third of a second. `build.cmd` uses the C# compiler that ships with
+Windows' .NET Framework.

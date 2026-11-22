@@ -55,14 +55,16 @@ UF2CONV = $(firstword $(wildcard \
 	$(ARDUINO_DATA)/packages/adafruit/hardware/nrf52/*/tools/uf2conv/uf2conv.py))
 OBJCOPY = $(firstword $(wildcard \
 	$(ARDUINO_DATA)/packages/adafruit/tools/arm-none-eabi-gcc/*/bin/arm-none-eabi-objcopy*))
+HID_H = $(firstword $(wildcard \
+	$(ARDUINO_DATA)/packages/adafruit/hardware/nrf52/*/libraries/Adafruit_TinyUSB_Arduino/src/class/hid/hid.h))
 UF2_FAMILY = 0xADA52840
-HEX = $(OUTPUT_DIR)/$(SKETCH).ino.hex
+HEX =$(OUTPUT_DIR)/$(SKETCH).ino.hex
 ELF = $(OUTPUT_DIR)/$(SKETCH).ino.elf
 UF2_RELEASE = $(OUTPUT_DIR)/$(SKETCH).uf2
 UF2_DEV = $(OUTPUT_DIR)/$(SKETCH)-dev.uf2
 
 .PHONY: need-clang-format format format-check check build guide-header \
-	flash deploy
+	flash deploy keymap tune
 
 need-clang-format:
 	@[ -n "$(CLANG_FORMAT)" ] || { echo "clang-format 18 not found"; exit 1; }
@@ -114,3 +116,14 @@ flash:
 		"$(if $(filter 1,$(KEEP_BONDS)),$(UF2_DEV),$(UF2_RELEASE))"
 
 deploy: build flash
+
+# Tuning a running puck without a reflash, until it reboots: the key map as
+# the source has it now, or a feel constant (SET="name value"; no SET lists
+# them all)
+keymap:
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/tune.ps1 \
+		-Keymap -HidHeader "$(HID_H)"
+
+tune:
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/tune.ps1 \
+		-Lines "~T $(SET)"
