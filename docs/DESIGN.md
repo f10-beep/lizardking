@@ -148,6 +148,9 @@ can be held with the left hand while the right thumb drives the cursor.
 - Clicking one of a pad's 8 outer zones types the key for that zone
   combined with the zone the other thumb rests in (8 × 9 per pad, 144 in
   all). Keys repeat while the click is held, using the OS key repeat.
+- A zone with no key for where the other thumb rests is inert like the
+  center: no pulse and nothing typed, so the thumb feels that nothing is
+  there. It stays dead until the thumb returns to the center.
 - Layout: `docs/KEYBOARD_LAYOUT.md`. Vowels on the left thumb, consonants
   on the right; numbers with the other thumb resting down; F-keys with it in
   the bottom outer corner; brackets with the thumbs spread outward.
@@ -182,10 +185,14 @@ switches, both on the Guide button:
   key map under it. Each panel draws the controller with every button
   labelled for that layer; the layer the thumbs select is outlined and the
   others fade. The outlined panel responds live: pressed buttons fill and
-  their labels light up, stick caps move in their rings, triggers fill as
-  they are pulled, and a dot follows each thumb on its pad. The faded
-  panels stay still, and the key map shows its keys only while both thumbs
-  are down. A cheat sheet lists the Guide button's gestures and chords;
+  their labels light up, stick caps move in their rings, and a dot follows
+  each thumb on its pad. A held button stays lit in the panel of the layer
+  it was pressed in, as it keeps acting there, even after the thumbs move
+  on. Triggers fill as they are pulled in the gamepad panel; in the
+  desktop panels they are keys (Space, Backspace) and fill on or off at the
+  firmware's thresholds. The key map shows its keys only while both thumbs
+  are down; a dot marks a zone with no key, and the inert centers stay
+  blank. A cheat sheet lists the Guide button's gestures and chords;
   each says what it will do now ("hide key map", "key map up"), and lights
   up when it is used. The Guide button is labelled in the gamepad panel
   only, the one layer where it does more than chords.
@@ -227,9 +234,10 @@ How it works:
   pad zone` for every typed key; `KG` on a Guide on/off press; `KI` on
   Guide + Start; `KT connected battery charge signal keymap low` about once
   a second and at once when the key map is switched or moved; `KB
-  buttons lt rt lx ly rx ry lpx lpy rpx rpy` for the live
-  drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, sent
-  on a change at most every 8 ms). The button labels themselves are
+  buttons lt rt lx ly rx ry lpx lpy rpx rpy own0 own1 own2` for the live
+  drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, the
+  held buttons each layer owns in hex, sent on a change at most every
+  8 ms). The button labels themselves are
   written into the Guide, which repaints at most about 60 times a
   second.
 - It finds the puck by its USB ID (`1209:0001`) in the registry and talks
@@ -248,9 +256,14 @@ How it works:
   so a Guide that hangs, crashes or closes hands the controller back on
   its own. Putting the Guide away sends `~h` to hand it back at once.
 - The tray icon is a signpost, not a second interface: its tooltip gives
-  the status and "Hold the Guide button to open the Guide", and clicking
-  it shows the same hint as a notification. Its menu holds only what has
-  no chord: Uninstall (when installed) and Quit.
+  the status ("LizardKing: 72%, strong signal"), and clicking it shows a
+  hint card above the tray for five seconds: the top of the controller
+  with the Guide button lit and an arrow pointing at it, and "Hold the
+  Guide button on the controller for more info." ("on the controller"
+  tells a newcomer where to look). Like the toast, it is click-through. A
+  Windows notification can't carry a picture without registering the app
+  with the Start menu, and doubled the app's name in its header. Its menu holds only what has no chord:
+  Uninstall (when installed) and Quit.
 - One instance at a time: a newly started copy (an update, a dev build)
   asks the running one to quit and takes over the serial port. `--demo`
   cycles fake states without a puck and runs alongside a real copy.

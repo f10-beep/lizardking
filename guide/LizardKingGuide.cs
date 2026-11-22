@@ -70,11 +70,17 @@ namespace LizardKing
 	}
 
 	// live controller input ("KB"): buttons as the firmware's TB_* bits,
-	// triggers 0..31, sticks and pad positions -32..32 (y up)
+	// triggers 0..31, sticks and pad positions -32..32 (y up); Own0..2 the
+	// held buttons each layer owns, by where they were pressed
 	struct InputState
 	{
-		public uint Buttons;
+		public uint Buttons, Own0, Own1, Own2;
 		public int LT, RT, LX, LY, RX, RY, LPX, LPY, RPX, RPY;
+
+		public uint Own(int layer)
+		{
+			return layer == 0 ? Own0 : layer == 1 ? Own1 : Own2;
+		}
 
 		public bool Has(uint mask)
 		{
@@ -658,7 +664,7 @@ namespace LizardKing
 			} else if (f[0] == "KK" && f.Length == 3) {
 				int pad = int.Parse(f[1]), zone = int.Parse(f[2]);
 				app.Post(delegate { app.OnPress(pad, zone); });
-			} else if (f[0] == "KB" && f.Length == 12) {
+			} else if (f[0] == "KB" && f.Length == 15) {
 				var inp = new InputState();
 				inp.Buttons = Convert.ToUInt32(f[1], 16);
 				inp.LT = int.Parse(f[2]);
@@ -671,6 +677,9 @@ namespace LizardKing
 				inp.LPY = int.Parse(f[9]);
 				inp.RPX = int.Parse(f[10]);
 				inp.RPY = int.Parse(f[11]);
+				inp.Own0 = Convert.ToUInt32(f[12], 16);
+				inp.Own1 = Convert.ToUInt32(f[13], 16);
+				inp.Own2 = Convert.ToUInt32(f[14], 16);
 				app.Post(delegate { app.OnInput(inp); });
 			} else if (f[0] == "KT" && f.Length == 7) {
 				var st = new CtlStatus();
@@ -713,6 +722,7 @@ namespace LizardKing
 				var inp = new InputState();
 				inp.Buttons = order[(int)(t * 2.5) % order.Length] |
 					      Btn.LPadT;
+				inp.Own0 = inp.Own1 = inp.Own2 = inp.Buttons & ~Btn.LPadT;
 				inp.LX = (int)(28 * Math.Cos(t * 2));
 				inp.LY = (int)(28 * Math.Sin(t * 2));
 				inp.RX = (int)(20 * Math.Sin(t * 3));
@@ -1334,7 +1344,9 @@ namespace LizardKing
 					Hid.Label(keymap[pad, other, pos], state.Shift) :
 					"";
 				Color ink = label.Length > 0 ? Theme.Ink : Theme.Dim;
-				if (label.Length == 0)
+				// a dot marks a key zone with nothing on it; the centers
+				// are inert by design and stay blank
+				if (label.Length == 0 && pos >= 0)
 					label = "\u00b7";
 				float bx = cx, by = cy;
 				Font font = FontOf(BigPt, true);
@@ -2062,6 +2074,26 @@ namespace LizardKing
 					     left);
 		}
 
+		// What a panel shows. Buttons light in the panel of the layer that
+		// owns them, so one held across a layer change stays lit where it
+		// acts. Only the panel in use follows thumbs and sticks. Triggers:
+		// the pull in the gamepad panel, and in the desktop panels the
+		// Space / Backspace key, on or off at the firmware's thresholds.
+		InputState PanelInput(int layer, bool on)
+		{
+			var inp = on ? input : new InputState();
+			const uint live = Btn.LPadT | Btn.RPadT | Btn.Steam;
+			inp.Buttons = input.Own(layer) | (on ? input.Buttons & live : 0);
+			if (layer == 0) {
+				inp.LT = on || inp.Has(Btn.LT) ? input.LT : 0;
+				inp.RT = on || inp.Has(Btn.RT) ? input.RT : 0;
+			} else {
+				inp.LT = inp.Has(Btn.LT) ? 31 : 0;
+				inp.RT = inp.Has(Btn.RT) ? 31 : 0;
+			}
+			return inp;
+		}
+
 		void PaintController(Graphics g, int layer, string name)
 		{
 			var q = Panel(layer);
@@ -2086,8 +2118,7 @@ namespace LizardKing
 					     area.Y + (area.Height - w.Height * s) / 2);
 			g.ScaleTransform(s, s);
 			g.TranslateTransform(-w.X, -w.Y);
-			// only the panel for the layer in use follows the controller
-			var inp = on ? input : new InputState();
+			var inp = PanelInput(layer, on);
 			ControllerArt.Draw(g, layer, ink, hidden, padFill, label, inp,
 					   hiFill, hiLine);
 			PaintLabels(g, layer, ink, lead, hiLine, inp);
@@ -2193,35 +2224,32 @@ namespace LizardKing
 		}
 	}
 
-	// A brief word in the middle of the screen when a key map chord is used
-	// with the Guide closed
-	class Toast : Form
+	// A click-through, always-on-top window that shows itself for a moment
+	// and hides again; nothing on it is clickable.
+	class Popup : Form
 	{
 		readonly System.Windows.Forms.Timer hide =
 			new System.Windows.Forms.Timer();
-		readonly Font font = new Font("Segoe UI Semibold", 30f,
-					      GraphicsUnit.Pixel);
-		string text = "";
 
-		public Toast()
+		protected Popup(int showMs, Color bg, Size size)
 		{
 			FormBorderStyle = FormBorderStyle.None;
 			ShowInTaskbar = false;
 			StartPosition = FormStartPosition.Manual;
 			TopMost = true;
-			BackColor = Theme.AccentFill;
+			BackColor = bg;
 			Opacity = 0;
-			Size = new Size(360, 84);
-			var s = Screen.PrimaryScreen.WorkingArea;
-			Location = new Point(s.X + (s.Width - Width) / 2,
-					     s.Y + s.Height / 6);
-			hide.Interval = 1100;
+			Size = size;
+			hide.Interval = showMs;
 			hide.Tick += delegate {
 				hide.Stop();
 				Opacity = 0;
 			};
 		}
 
+		// layered + transparent: clicks pass through; noactivate and
+		// toolwindow: never takes focus, stays out of the taskbar and
+		// Alt-Tab
 		protected override CreateParams CreateParams
 		{
 			get {
@@ -2242,28 +2270,123 @@ namespace LizardKing
 			Region = Shape.WindowRegion(Size);
 		}
 
-		public void Say(string t)
+		protected void Pop()
 		{
-			text = t;
 			Invalidate();
 			Opacity = 0.95;
 			hide.Stop();
 			hide.Start();
 		}
 
-		protected override void OnPaint(PaintEventArgs pe)
+		protected void Frame(Graphics g, Color edge)
 		{
-			var g = pe.Graphics;
-			g.Clear(Theme.AccentFill);
-			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 			g.SmoothingMode = SmoothingMode.AntiAlias;
-			using (var pen = new Pen(Theme.Accent, 2))
+			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
+			using (var pen = new Pen(edge, 2))
 			using (var bp = Shape.Round(new RectangleF(1, 1, Width - 2,
 								  Height - 2),
 						    Shape.Window - 1))
 				g.DrawPath(pen, bp);
+		}
+	}
+
+	// A brief word in the middle of the screen when a key map chord is used
+	// with the Guide closed
+	class Toast : Popup
+	{
+		readonly Font font = new Font("Segoe UI Semibold", 30f,
+					      GraphicsUnit.Pixel);
+		string text = "";
+
+		public Toast() : base(1100, Theme.AccentFill, new Size(360, 84))
+		{
+			var s = Screen.PrimaryScreen.WorkingArea;
+			Location = new Point(s.X + (s.Width - Width) / 2,
+					     s.Y + s.Height / 6);
+		}
+
+		public void Say(string t)
+		{
+			text = t;
+			Pop();
+		}
+
+		protected override void OnPaint(PaintEventArgs pe)
+		{
+			var g = pe.Graphics;
+			g.Clear(Theme.AccentFill);
+			Frame(g, Theme.Accent);
 			using (var b = new SolidBrush(Theme.Ink))
 				g.DrawString(text, font, b, ClientRectangle,
+					     new StringFormat {
+						     Alignment = StringAlignment.Center,
+						     LineAlignment = StringAlignment.Center,
+					     });
+		}
+	}
+
+	// The tray icon's answer to a click: above the tray, the top of the
+	// controller with the Guide button lit and an arrow pointing at it, and
+	// one line saying to hold it. It points to the Guide button rather than
+	// being a second way in.
+	class HintCard : Popup
+	{
+		// "on the controller" tells a newcomer where the button is
+		public const string Hint =
+			"Hold the Guide button on the controller\nfor more info.";
+		// the controller's top half, in ControllerArt's world units: the
+		// triggers down to the sticks, with room above for the arrow
+		static readonly RectangleF Crop = new RectangleF(-10, -330, 1484, 820);
+		const float GuideX = 732, GuideTop = 192;
+		readonly Font font = new Font("Segoe UI", 15f, GraphicsUnit.Pixel);
+		readonly Font padFont = new Font("Segoe UI", 46f, GraphicsUnit.Pixel);
+
+		public HintCard() : base(5000, Theme.Bg, new Size(380, 270))
+		{
+			var s = Screen.PrimaryScreen.WorkingArea;
+			Location = new Point(s.Right - Width - 12, s.Bottom - Height - 12);
+		}
+
+		public void Appear()
+		{
+			Pop();
+		}
+
+		protected override void OnPaint(PaintEventArgs pe)
+		{
+			var g = pe.Graphics;
+			g.Clear(Theme.Bg);
+			Frame(g, Theme.Edge);
+			var area = new RectangleF(16, 14, Width - 32, Height - 74);
+			float k = Math.Min(area.Width / Crop.Width,
+					   area.Height / Crop.Height);
+			var st = g.Save();
+			g.SetClip(area);
+			g.TranslateTransform(area.X + (area.Width - Crop.Width * k) / 2,
+					     area.Y);
+			g.ScaleTransform(k, k);
+			g.TranslateTransform(-Crop.X, -Crop.Y);
+			var inp = new InputState();
+			inp.Buttons = Btn.Steam;
+			ControllerArt.Draw(g, 0, Theme.Dim, Theme.Dim, Theme.AccentFill,
+					   padFont, inp, Theme.AccentFill, Theme.Flash);
+			using (var arrow = new Pen(Theme.Flash, 18)) {
+				arrow.CustomEndCap = new AdjustableArrowCap(3, 3);
+				g.DrawLine(arrow, GuideX, Crop.Y + 20, GuideX,
+					   GuideTop - 24);
+			}
+			g.Restore(st);
+			// the controller fades out below the sticks
+			var fade = new RectangleF(area.X, area.Bottom - 50, area.Width,
+						  51);
+			using (var b = new LinearGradientBrush(fade,
+							       Color.FromArgb(0, Theme.Bg),
+							       Theme.Bg, 90f))
+				g.FillRectangle(b, fade);
+			using (var b = new SolidBrush(Theme.Ink))
+				g.DrawString(Hint, font, b,
+					     new RectangleF(16, Height - 60, Width - 32,
+							    48),
 					     new StringFormat {
 						     Alignment = StringAlignment.Center,
 						     LineAlignment = StringAlignment.Center,
@@ -2350,6 +2473,7 @@ namespace LizardKing
 		public readonly KeyOverlay Keys = new KeyOverlay();
 		readonly GuideWindow guide;
 		readonly Toast toast = new Toast();
+		readonly HintCard hint = new HintCard();
 		readonly bool installed;
 		readonly System.Windows.Forms.Timer beats =
 			new System.Windows.Forms.Timer();
@@ -2395,6 +2519,7 @@ namespace LizardKing
 		{
 			guide.Show();
 			toast.Show();
+			hint.Show();
 			if (guideUp)
 				Park();
 			Apply();
@@ -2442,6 +2567,11 @@ namespace LizardKing
 			else
 				Cursor.Position = cursor;
 			Apply();
+		}
+
+		public void ShowHint()
+		{
+			hint.Appear();
 		}
 
 		public void InstallChord()
@@ -2623,8 +2753,7 @@ namespace LizardKing
 			// way in
 			tray.MouseClick += delegate(object o, MouseEventArgs e) {
 				if (e.Button == MouseButtons.Left)
-					tray.ShowBalloonTip(5000, "LizardKing Guide", Hint,
-							    ToolTipIcon.Info);
+					app.ShowHint();
 			};
 			tray.Visible = true;
 
@@ -2648,12 +2777,10 @@ namespace LizardKing
 			tray.Dispose();
 		}
 
-		const string Hint = "Hold the Guide button to open the Guide.";
-
 		// NotifyIcon refuses a tooltip of 64 characters or more
 		static string Tip(string status)
 		{
-			string t = status + "\n" + Hint;
+			string t = "LizardKing: " + status;
 			return t.Length < 64 ? t : t.Substring(0, 63);
 		}
 

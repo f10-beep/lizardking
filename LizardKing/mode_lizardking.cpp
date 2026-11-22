@@ -1034,6 +1034,17 @@ static void typeKey(int i, uint8_t key, uint8_t z)
 		Serial.printf("KK %d %u\n", i, z);
 }
 
+// A key zone with no key for where the other thumb rests is inert like the
+// center: no pulse, so the thumb feels that nothing is there. It stays dead
+// until the thumb returns to the center.
+static void pressZone(int i, uint8_t key, uint8_t z)
+{
+	if (key)
+		typeKey(i, key, z);
+	else
+		s_pad[i].kst = KS_DEAD;
+}
+
 // Pad clicks: a sharp pulse on each edge. In the keyboard layer a click types
 // the key for its zone and the other thumb's zone; the center zone is inert
 // (no key, no pulse). See KS_*.
@@ -1059,14 +1070,14 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 			} else if (pos < 0) {
 				pd.kst = KS_CENTER;
 			} else {
-				typeKey(i, key, z);
+				pressZone(i, key, z);
 			}
 			continue;
 		}
 		if (!click)
 			continue;
 		if (pd.kst == KS_CENTER && pos >= 0) {
-			typeKey(i, key, z);
+			pressZone(i, key, z);
 		} else if (pd.kst == KS_KEY && z != pd.keyZone) {
 			hapticKey(PULSE_SIDE[i], false);
 			pd.key = 0;
@@ -1145,15 +1156,17 @@ static void streamState(const uint8_t zone[2])
 }
 
 // Live input for the Guide's controller drawing: "KB buttons lt rt lx ly rx
-// ry lpx lpy rpx rpy" (buttons in hex as the Guide sees them, with derived
-// pad clicks and trigger bits; triggers 0..31; sticks and pad positions
-// -32..32, pads 0 when untouched). Coarse steps keep stick and pad jitter
-// from flooding the port; sent only on a change, at most every 8 ms, and
-// dropped rather than waited for when the CDC buffer is full.
+// ry lpx lpy rpx rpy own0 own1 own2" (buttons in hex as the Guide sees them,
+// with derived pad clicks and trigger bits; triggers 0..31; sticks and pad
+// positions -32..32, pads 0 when untouched; ownN in hex, the held buttons
+// that belong to layer N, so a button held across a layer change stays lit
+// in the panel it acts in). Coarse steps keep stick and pad jitter from
+// flooding the port; sent only on a change, at most every 8 ms, and dropped
+// rather than waited for when the CDC buffer is full.
 static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 {
 	static int16_t last[10];
-	static uint32_t lastB = 0xFFFFFFFF, lastMs;
+	static uint32_t lastB = 0xFFFFFFFF, lastOwn[LY_N], lastMs;
 	bool lTouch = b & TB_LPADT, rTouch = b & TB_RPADT;
 	const int16_t cur[10] = {
 		(int16_t)(in.lt >> 3),
@@ -1167,16 +1180,21 @@ static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 		(int16_t)(rTouch ? in.rpx / 1024 : 0),
 		(int16_t)(rTouch ? in.rpy / 1024 : 0),
 	};
-	if (b == lastB && !memcmp(cur, last, sizeof cur))
+	if (b == lastB && !memcmp(cur, last, sizeof cur) &&
+	    !memcmp(s_own, lastOwn, sizeof lastOwn))
 		return;
-	if (now - lastMs < 8 || !Serial || Serial.availableForWrite() < 72)
+	if (now - lastMs < 8 || !Serial || Serial.availableForWrite() < 100)
 		return;
 	lastB = b;
 	lastMs = now;
 	memcpy(last, cur, sizeof cur);
-	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d\n",
+	memcpy(lastOwn, s_own, sizeof lastOwn);
+	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d %lx %lx %lx\n",
 		      (unsigned long)b, cur[0], cur[1], cur[2], cur[3], cur[4],
-		      cur[5], cur[6], cur[7], cur[8], cur[9]);
+		      cur[5], cur[6], cur[7], cur[8], cur[9],
+		      (unsigned long)s_own[LY_PAD],
+		      (unsigned long)s_own[LY_MOUSE],
+		      (unsigned long)s_own[LY_KBD]);
 }
 
 void lkDumpKeymap()
@@ -1535,11 +1553,11 @@ static void lkProcess(const PuckInput &in)
 {
 	uint32_t now = millis();
 	uint32_t derived = deriveButtons(in);
-	streamInput(in, derived, now);
 	uint32_t raw = guideButton(derived, now);
 	uint8_t touchLayer = layerFromTouch(in.buttons);
 	layerStep(touchLayer, now);
 	ownButtons(raw & LK_BTN_MASK, touchLayer);
+	streamInput(in, derived, now);
 	gamepadStep(in);
 
 	bool rTouch = in.buttons & TB_RPADT, lTouch = in.buttons & TB_LPADT;
