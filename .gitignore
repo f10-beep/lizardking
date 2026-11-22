@@ -2,3 +2,4 @@ build/
 *.log
 LizardKing/git_version.h
 LizardKing/guide_exe.h
+.claude/settings.local.json

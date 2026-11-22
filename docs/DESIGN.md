@@ -161,8 +161,14 @@ can be held with the left hand while the right thumb drives the cursor.
 Framework 4.x that ships with Windows 10/11, so it needs nothing installed.
 `make build` compiles it with the framework's own `csc` (or run
 `guide/build.cmd`) into `build/guide/LizardKingGuide.exe`, about 45 KB.
-The name is the start of a rebrand; the firmware, USB device and repo are
-still LizardKing.
+
+Look: lizard greens (olive-tinted darks, an anole-green accent, a lime
+highlight; low battery stays amber), with a faint pattern of rounded scales
+inside the Guide's panels only, generated in code and kept a couple of
+levels off the surface so it never competes with text; window backgrounds,
+keys and chips stay plain. The tray icon is the controller's own outline in
+green with the pads cut in dark, so it reads as a face, wearing a gold
+crown; it still reads at 16 px.
 
 The Guide teaches the chords; the chords are the only interface. Nothing on
 screen is clickable: every window is click-through. Two independent

@@ -337,18 +337,67 @@ namespace LizardKing
 								ref uint size);
 	}
 
+	// Lizard greens: olive-tinted darks, an anole-green accent, a lime
+	// highlight. Low battery stays amber so it never reads as "fine".
 	static class Theme
 	{
-		public static readonly Color Bg = Hex("1b1e24");
-		public static readonly Color Panel = Hex("20242b");
-		public static readonly Color Cell = Hex("2a2f38");
-		public static readonly Color Edge = Hex("3d4450");
-		public static readonly Color Ink = Hex("e8eaee");
-		public static readonly Color Dim = Hex("6c7380");
-		public static readonly Color Accent = Hex("3f8cff");
-		public static readonly Color AccentFill = Hex("24344f");
-		public static readonly Color Mini = Hex("6a7180");
-		public static readonly Color Flash = Hex("6fa4ff");
+		public static readonly Color Bg = Hex("191e18");
+		public static readonly Color Panel = Hex("1f251d");
+		public static readonly Color Cell = Hex("283022");
+		public static readonly Color Edge = Hex("3c4734");
+		public static readonly Color Ink = Hex("e6ebde");
+		public static readonly Color Dim = Hex("74806a");
+		public static readonly Color Accent = Hex("6cbf3d");
+		public static readonly Color AccentFill = Hex("253a1c");
+		public static readonly Color Flash = Hex("b4e36f");
+
+		// A faint scale pattern for the Guide's panels: staggered rows
+		// of rounded beads, as on a lizard's back, each a shade lighter
+		// than the seams around it and lit along its top, a few levels off
+		// the surface, so it reads as finish and never as content. Text,
+		// keys and chips sit on plain fills.
+		static TextureBrush scales;
+
+		public static void Scales(Graphics g, GraphicsPath area)
+		{
+			if (scales == null)
+				scales = new TextureBrush(ScaleTile(), WrapMode.Tile);
+			g.FillPath(scales, area);
+		}
+
+		static Bitmap ScaleTile()
+		{
+			// 6 x 4 scales, rows half a scale apart, a little irregular
+			// so the repeat doesn't show
+			const int W = 12, H = 10, Cols = 8, Rows = 6;
+			var bmp = new Bitmap(W * Cols, H * Rows);
+			var rnd = new Random(7);
+			using (var g = Graphics.FromImage(bmp))
+			using (var bead = new SolidBrush(Color.FromArgb(4, Ink)))
+			using (var lit = new Pen(Color.FromArgb(6, Ink), 1f))
+			using (var seam = new Pen(Color.FromArgb(17, Color.Black), 1.2f)) {
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				for (int r = 0; r < Rows; r++)
+					for (int c = 0; c < Cols; c++) {
+						float cx = c * W + (r % 2 == 1 ? W / 2f : 0);
+						float cy = r * H;
+						float w = W - 1 + (float)rnd.NextDouble() * 1.5f;
+						float h = H + (float)rnd.NextDouble() * 1.5f;
+						// drawn at each wrap so the tile joins seamlessly
+						for (int dx = -1; dx <= 1; dx++)
+							for (int dy = -1; dy <= 1; dy++) {
+								var e = new RectangleF(
+									cx + dx * bmp.Width - w / 2,
+									cy + dy * bmp.Height - h / 2, w, h);
+								g.FillEllipse(bead, e);
+								g.DrawEllipse(seam, e);
+								e.Inflate(-2.5f, -2.5f);
+								g.DrawArc(lit, e, 200, 140);
+							}
+					}
+			}
+			return bmp;
+		}
 
 		public static Color Hex(string s)
 		{
@@ -886,7 +935,8 @@ namespace LizardKing
 					using (var p = Shape.Round(r, 7))
 						g.DrawPath(pen, p);
 				}
-				using (var b = new SolidBrush(Theme.Mix(Theme.Ink, Color.White,
+				// dark text on the bright green, for contrast
+				using (var b = new SolidBrush(Theme.Mix(Theme.Ink, Theme.Bg,
 									c.Lit)))
 					g.DrawString(c.Text, Small, b, r, Center);
 			}
@@ -1017,6 +1067,12 @@ namespace LizardKing
 		public bool HasKeymap
 		{
 			get { return keymap != null; }
+		}
+
+		// the key grids alone, with their margin: what the Guide centers
+		public Size GridSize
+		{
+			get { return new Size(ClientSize.Width, grid + 40); }
 		}
 
 		// the key grids and legend, below this overlay's title bar
@@ -1193,13 +1249,15 @@ namespace LizardKing
 							       "Guide + left pad: move down",
 							 0, false) });
 			g.TranslateTransform(0, HeaderH);
-			PaintKeys(g, true, true);
+			PaintKeys(g, true, true, 1);
 		}
 
 		// The key grids in KeysSize coordinates; the Guide window scales
 		// them into its panel. Without glyphs: just the empty grids (the
 		// Guide shows them so while the thumbs are not both down).
-		public void PaintKeys(Graphics g, bool legend, bool glyphs)
+		// level 1 full strength, lower fades toward the panel colour
+		public void PaintKeys(Graphics g, bool legend, bool glyphs,
+				      double level)
 		{
 			if (keymap == null)
 				return;
@@ -1213,7 +1271,7 @@ namespace LizardKing
 				e = 1 - Math.Pow(1 - p, 3);
 			}
 			for (int pad = 0; pad < 2; pad++)
-				PaintPad(g, pad, now, e, glyphs);
+				PaintPad(g, pad, now, e, glyphs, level);
 			if (!legend)
 				return;
 			using (var b = new SolidBrush(Theme.Dim))
@@ -1226,8 +1284,9 @@ namespace LizardKing
 		}
 
 		void PaintPad(Graphics g, int pad, double now, double e,
-			      bool glyphs)
+			      bool glyphs, double level)
 		{
+			Func<Color, Color> fade = c => Theme.Mix(Theme.Panel, c, level);
 			int x0 = pad == PadL ? 20 : 20 + grid + PadGap;
 			int other = OtherZone(state, pad), ro = other / 3,
 			    co = other % 3;
@@ -1259,11 +1318,11 @@ namespace LizardKing
 					       z == 2 ? big : Shape.Small,
 					       z == 8 ? big : Shape.Small,
 					       z == 6 ? big : Shape.Small)) {
-					using (var b = new SolidBrush(fill))
+					using (var b = new SolidBrush(fade(fill)))
 						g.FillPath(b, cell);
-					using (var pen = new Pen(Theme.Mix(Theme.Edge,
-									   Theme.Accent,
-									   lit),
+					using (var pen = new Pen(fade(Theme.Mix(Theme.Edge,
+										Theme.Accent,
+										lit)),
 								 (float)(2 + 2 * lit)))
 						g.DrawPath(pen, cell);
 				}
@@ -1286,9 +1345,9 @@ namespace LizardKing
 					int pt = (int)Math.Round(MiniPt +
 								 (BigPt - MiniPt) * e);
 					font = FontOf(pt, e > 0.5);
-					ink = Theme.Mix(Theme.Mini, ink, e);
+					ink = Theme.Mix(Theme.Dim, ink, e);
 				}
-				DrawCentered(g, label, font, ink, bx, by);
+				DrawCentered(g, label, font, fade(ink), bx, by);
 
 				if (pos < 0)
 					continue;
@@ -1302,7 +1361,7 @@ namespace LizardKing
 							       state.Shift);
 					if (alt.Length > 0)
 						DrawCentered(g, alt, FontOf(MiniPt, false),
-							     Theme.Mini,
+							     fade(Theme.Dim),
 							     cx + (d % 3 - 1) * MiniOff,
 							     cy + (d / 3 - 1) * MiniOff);
 				}
@@ -1977,6 +2036,7 @@ namespace LizardKing
 			using (var p = Rounded(q, 12)) {
 				using (var b = new SolidBrush(Theme.Panel))
 					g.FillPath(b, p);
+				Theme.Scales(g, p);
 				using (var pen = new Pen(Theme.Mix(Theme.Edge, Theme.Accent,
 								   f),
 							 (float)(1.5 + 1.5 * f)))
@@ -2012,7 +2072,7 @@ namespace LizardKing
 			Color ink = Theme.Mix(Theme.Panel, Theme.Ink, k);
 			Color hidden = Theme.Mix(Theme.Panel, Theme.Dim, k);
 			Color padFill = Theme.Mix(Theme.Panel, Theme.AccentFill, k);
-			Color lead = Theme.Mix(Theme.Panel, Theme.Mini, k);
+			Color lead = Theme.Mix(Theme.Panel, Theme.Dim, k);
 			Color hiFill = Theme.Mix(Theme.Panel, Theme.AccentFill,
 						 Math.Max(k, 0.8));
 			Color hiLine = Theme.Mix(Theme.Panel, Theme.Flash, Math.Max(k, 0.7));
@@ -2113,14 +2173,14 @@ namespace LizardKing
 				     new RectangleF(cx + dx, y - 35, 300, 70), left);
 		}
 
+		// fades like the other inactive panels
 		void PaintKeyMap(Graphics g, Rectangle q)
 		{
-			bool on = state.Layer == KeyOverlay.LayerKbd;
-			double f = (Level(KeyOverlay.LayerKbd) - Dim) / (1 - Dim);
+			double k = Level(KeyOverlay.LayerKbd);
 			if (!keys.HasKeymap)
 				return;
 			RectangleF area = q;
-			var ks = keys.KeysSize;
+			var ks = keys.GridSize;
 			float s = Math.Min(area.Width / ks.Width,
 					   area.Height / ks.Height);
 			var st = g.Save();
@@ -2128,15 +2188,8 @@ namespace LizardKing
 			g.TranslateTransform(area.X + (area.Width - ks.Width * s) / 2,
 					     area.Y + (area.Height - ks.Height * s) / 2);
 			g.ScaleTransform(s, s);
-			keys.PaintKeys(g, false, f > 0);
+			keys.PaintKeys(g, false, k > Dim, k);
 			g.Restore(st);
-			if (!on) {
-				// fade like the other inactive panels
-				int veil = (int)Math.Round(150 * (1 - f));
-				using (var b = new SolidBrush(Color.FromArgb(veil,
-									    Theme.Panel)))
-					g.FillRectangle(b, area);
-			}
 		}
 	}
 
@@ -2635,21 +2688,48 @@ namespace LizardKing
 			return m;
 		}
 
-		// two 3x3 pads, drawn rather than shipped as a file
-		static Icon MakeIcon()
+		// The controller's own outline, lime fading to green with a dark
+		// rim, the two pads cut in dark (it reads as a face), wearing a gold
+		// crown: still legible at 16 px. Drawn rather than shipped as a
+		// file.
+		public static Icon MakeIcon()
 		{
-			using (var bmp = new Bitmap(32, 32))
-			using (var g = Graphics.FromImage(bmp)) {
+			const int S = 32;
+			using (var bmp = new Bitmap(S, S))
+			using (var g = Graphics.FromImage(bmp))
+			using (var body = ControllerArt.Body()) {
 				g.Clear(Color.Transparent);
-				using (var bg = new SolidBrush(Theme.Bg))
-					g.FillRectangle(bg, 0, 6, 32, 20);
-				using (var dot = new SolidBrush(Theme.Accent)) {
-					for (int pad = 0; pad < 2; pad++)
-						for (int i = 0; i < 9; i++)
-							g.FillRectangle(dot,
-									2 + pad * 16 + (i % 3) * 4,
-									10 + (i / 3) * 4, 3, 3);
-				}
+				g.SmoothingMode = SmoothingMode.AntiAlias;
+				var b = body.GetBounds();
+				float k = (S - 2) / b.Width;
+				// sits on the bottom edge, leaving the top for the crown
+				float top = S - 1 - b.Height * k;
+				var crown = new[] {
+					new PointF(9, top + 2), new PointF(8, top - 7),
+					new PointF(12.5f, top - 3), new PointF(16, top - 9),
+					new PointF(19.5f, top - 3), new PointF(24, top - 7),
+					new PointF(23, top + 2),
+				};
+				using (var gold = new SolidBrush(Color.FromArgb(0xf2, 0xc2, 0x30)))
+					g.FillPolygon(gold, crown);
+				using (var rim = new Pen(Color.FromArgb(0x6b, 0x4e, 0x0a), 1.2f))
+					g.DrawPolygon(rim, crown);
+				g.TranslateTransform(1, top);
+				g.ScaleTransform(k, k);
+				g.TranslateTransform(-b.X, -b.Y);
+				using (var fill = new LinearGradientBrush(b, Theme.Flash,
+									 Theme.Accent, 90f))
+					g.FillPath(fill, body);
+				using (var rim = new Pen(Theme.AccentFill, 1.6f / k))
+					g.DrawPath(rim, body);
+				using (var dark = new SolidBrush(Theme.AccentFill))
+					foreach (var c in new[] { ControllerArt.PadL,
+								  ControllerArt.PadR })
+						using (var pad = Shape.Round(
+							       new RectangleF(c.X - 150, c.Y - 150,
+									      300, 300),
+							       40))
+							g.FillPath(dark, pad);
 				IntPtr h = bmp.GetHicon();
 				var icon = (Icon)Icon.FromHandle(h).Clone();
 				Native.DestroyIcon(h);

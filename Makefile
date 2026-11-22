@@ -73,6 +73,7 @@ check: format-check
 guide-header:
 ifeq ($(LIZARD_DRIVE)$(OS),1Windows_NT)
 	mkdir -p build/guide
+	powershell -NoProfile -ExecutionPolicy Bypass -File tools/quit-guide.ps1
 	"$(CSC)" -nologo -target:winexe -optimize+ \
 		'-out:build\guide\LizardKingGuide.exe' \
 		-r:System.Windows.Forms.dll -r:System.Drawing.dll \

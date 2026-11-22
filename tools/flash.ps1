@@ -20,13 +20,7 @@ if (-not $drive) {
 			'Double-tap reset for the bootloader drive, then retry.'
 	}
 	$com = $Matches[1]
-	# a running Guide holds the port: ask it to quit the way a newer copy
-	# of itself would
-	try {
-		[System.Threading.EventWaitHandle]::OpenExisting(
-			'Local\LizardKingGuide.Quit').Set() | Out-Null
-	} catch {
-	}
+	& (Join-Path $PSScriptRoot 'quit-guide.ps1')
 	$port = New-Object System.IO.Ports.SerialPort $com
 	$port.DtrEnable = $true
 	$deadline = (Get-Date).AddSeconds(5)
