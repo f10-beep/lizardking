@@ -28,34 +28,24 @@ pass.
 Launch feature (in the first release): gyro aiming.
 
 - **Gyro aiming** (launch): built, with the right pad (docs/DESIGN.md,
-  Gyro aiming). Tune the sensitivity curve and smoothing by hand in games
-  before release.
+  Gyro aiming). Felt right in Jumpspace once used to it; try another gyro
+  shooter, then tune the curve and smoothing with a wider group, existing
+  gyro players among them, before release (`make tune` sets them live).
 - **Lift-off protection.** Lightening the fast-swipe smoothing (follow 30%)
   gave stronger flicks but slightly weaker lift-off protection; retune.
 - **Scroll momentum.** Tune the fling threshold and the coast by feel.
 - **Clicks.** Keep lowering the click threshold until it misfires.
 - **Keyboard.** Tune zones and texture.
-- **Pad pressure in the Guide's key map:** a subtle meter on each pad with
-  notches at the click thresholds.
-- **Steam Input on.** Test games with Steam Input on and off: the pad
-  should pass through like any Xbox 360 pad, and the pads and gyro keep
-  driving the mouse. Steam's desktop layout doubling the sticks as a mouse
-  is possible in theory but never showed up with heavy keyboard-and-mouse
-  mappings on a Steam Controller and an Xbox Elite.
-- **Long drags.** With the two-pad drag gone, a drag longer than one pad
-  swipe leans on the gyro (lifting the thumb lets go of the click). Check
-  it's enough in practice.
-- **Media next / previous.** Play/pause works; next and previous track
-  (the standard consumer usages) did nothing in YouTube, even with a
-  queue. Compare with a keyboard's media keys to see whose problem it is.
-- **LizardKing when wired.** A controller turned on while plugged into the
-  PC by USB connects there directly, as a Steam Controller, and the puck
-  never hears it: LizardKing is gone until the cable comes out. The trap
-  is charging from the PC: turn the controller off (Guide + Back) and on
-  again, and it's suddenly a Steam Controller. At least the Guide could
-  notice the wired controller (USB `28DE:1302`) and say to unplug it;
-  better, make LizardKing work wired.
 - **Keeping a tuned key map or constant through a reboot.** The console
   already changes both live (`~K`, `~T`); saving them to the puck's flash
   would let an owner keep a customization. Likely a popular request once
   LizardKing is out; not needed for our own tuning, so deferred.
+
+Settled, so not to be reopened without a new reason: Steam Input works on
+its default settings (its Guide chords take real effort to trigger); long
+drags reach far with the pad and gyro; the pads' click thresholds already
+show where clicks are; next / previous track send the standard usages
+(play/pause works), so a report would be the first sign of trouble; a
+controller turned on wired stays wired (the Guide says to unplug and turn
+it back on), while one plugged in once on keeps LizardKing; the face
+buttons stay A/B/X/Y beside the back buttons.
