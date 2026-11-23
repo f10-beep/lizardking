@@ -8,11 +8,11 @@ protocol, the radio driver, bonding, and the USB plumbing are their work.
 
 Carried over from OpenPuck, with LizardKing's modifications (other emulation
 modes, the WebUSB configurator, firmware update over WebUSB, Xbox 360 console
-authentication, dynamic USB mounting, the RF reverse-engineering tools and
-ColdBoot removed):
+authentication, dynamic USB mounting, the RF reverse-engineering tools,
+ColdBoot and the fault diagnostics removed):
 
   LizardKing/bonds.*, board_config.h, build_info.h, config.*,
-  controllers.*, fault_diag.*, haptics.*, identity.*, lizard_map.*,
+  controllers.*, haptics.*, identity.*, lizard_map.*,
   mode_lizard.*, mode_xinput.*, puck_hid.*, radio.*, rf_journal_layout.h,
   rf_link.*, serial_console.*, status_led.*, steam_commands.h, triton.*,
   usb_app_drivers.*, usb_tx.*, wake_hid.*, xinput_descriptors.h,

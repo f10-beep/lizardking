@@ -1,5 +1,4 @@
 #include "config.h"
-#include "fault_diag.h"
 #include "haptics.h"
 #include "rf_link.h"
 #include <Adafruit_TinyUSB.h>
@@ -71,7 +70,6 @@ void cfgTask()
 	if (!s_dirty || (anySlotLinkUp() && !USBDevice.suspended()))
 		return;
 	s_dirty = false;
-	faultDiagTrace(FR_SAVE, 1);
 	writeCfg();
 }
 

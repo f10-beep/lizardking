@@ -14,7 +14,6 @@ Every piece of shared state lives in one of these:
 |---|---|---|
 | loop task | low priority, ~4 KB | `setup()`, everything `loop()` calls, and all radio code (polled from `rfLinkTask` / `rfDiagTask`; there is no radio ISR) |
 | usbd task | high priority, ~800 B | TinyUSB callbacks: HID get/set report, the XInput class driver, vendor and string descriptor requests. The stack is tiny: a `Serial.printf` here can overflow it |
-| ISR | exception | `HardFault_Handler`, `WDT_IRQHandler`, the black-box timer (`fault_diag.cpp`) |
 
 Producers shared between contexts run under PRIMASK; the per-slot HID reply
 rings are single-producer (usbd) / single-consumer (loop).
@@ -46,11 +45,10 @@ usb_app_drivers      custom class drivers and the vendor / string descriptor
 
 | File | What |
 |---|---|
-| `LizardKing.ino` | `setup()` picks the mode from the bonds (none: Steam mode, to pair), presents USB and arms the ~8 s watchdog; `loop()` pumps each subsystem |
+| `LizardKing.ino` | `setup()` picks the mode from the bonds (none: Steam mode, to pair), presents USB, arms the ~8 s watchdog and prints why it last reset; `loop()` pumps each subsystem |
 | `config.*` | the boot's USB presentation, the poll rate, `cfg.bin` (rumble and sleep tunables) and the first-boot wipe |
 | `bonds.*`, `identity.*` | the four controller bond slots; the unit serial |
 | `haptics.*` | host→controller haptic and rumble relay |
-| `fault_diag.*` | reset classification, hang capture, flight recorder |
 | `serial_console.*` | the CDC console: the Guide's `~` protocol, haptic tuning, and a few tuning and diagnosis commands |
 | `wake_hid.*`, `status_led.*` | host wake, LED |
 | `guide/` | the LizardKing Guide (C#, Windows) |

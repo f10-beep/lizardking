@@ -9,7 +9,6 @@
 #include "puck_hid.h"
 #include "controllers.h"
 #include "status_led.h"
-#include "fault_diag.h"
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
 #include <string.h>
@@ -2383,7 +2382,6 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 									g_connCooldown));
 					}
 					hapticOnReconnect(s);
-					faultDiagTrace(FR_RFUP, s);
 				}
 				g_slotPoweredOff[s] = (rtype == 0xF2);
 				g_connRx++;
@@ -2415,9 +2413,6 @@ uint8_t rfConnTx(uint8_t ch, uint8_t s1, const uint8_t *payload, uint8_t plen,
 					if (i != g_curSlot && g_slot[i].used &&
 					    millis() - g_connReplyMs[i] < 300)
 						others++;
-				faultDiagTrace(FR_RFDN,
-					       (uint16_t)((g_curSlot << 8) |
-							  (others & 0xFF)));
 				if (others == 0)
 					g_connCooldown = millis();
 				// Lifecycle log: the controller sent F2 (disconnect/power-off). Note whether it armed the
@@ -3036,7 +3031,6 @@ void rfLinkTask()
 		    (uint32_t)(nowMs2 - lastRecoverMs) > interval) {
 			lastRecoverMs = nowMs2;
 			g_rfStallRecover++;
-			faultDiagTrace(FR_HEAL, g_rfStallRecover);
 			if (consecStall < 255)
 				consecStall++;
 			NRF_RADIO->POWER = 0;

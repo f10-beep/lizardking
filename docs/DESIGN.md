@@ -513,7 +513,7 @@ Plain commands, for tuning and diagnosis:
 | `RY<n>` | host-rumble style, persisted |
 | `TR` | a test buzz at the current style and strength |
 | `SO` | power the controllers off on host sleep, on or off, persisted |
-| `FR` | reprints the flight recorder from the last watchdog hang |
+| `UP` | reprints the boot line, with why the puck last reset (`watchdog` is a hang it recovered from) |
 
 ## Next
 

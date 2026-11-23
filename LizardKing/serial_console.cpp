@@ -5,7 +5,6 @@
 #include "steam_commands.h"
 #include "bonds.h"
 #include "config.h"
-#include "fault_diag.h"
 #include "mode_lizardking.h" // g_lkTrace
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
@@ -78,7 +77,6 @@ static void tildeCommand(const char *a)
 		Serial.println("# UF2 bootloader");
 		Serial.flush();
 		delay(40);
-		faultDiagArmIntentionalReset();
 		enterUf2Dfu();
 		return;
 	case 'p':
@@ -126,7 +124,7 @@ static void tildeCommand(const char *a)
 //   RY<n>     host-rumble style (RUMBLE_STYLE_*), persisted
 //   TR        a test buzz at the current style and strength
 //   SO        power the controllers off on host sleep, persisted
-//   FR        reprint the flight recorder from the last watchdog hang
+//   UP        reprint the boot line, with why the puck last reset
 void serialConsolePoll()
 {
 	// long enough for a key map page (~K)
@@ -185,8 +183,8 @@ void serialConsolePoll()
 				"# power off controllers on host sleep (>%ums) %s\n",
 				(unsigned)SUSPEND_OFF_MS,
 				g_suspendOff ? "ON" : "off");
-		} else if (!strcmp(line, "FR")) {
-			faultDiagDumpFlight();
+		} else if (!strcmp(line, "UP")) {
+			printBoot();
 		}
 	}
 }

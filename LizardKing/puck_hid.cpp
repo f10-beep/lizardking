@@ -3,7 +3,6 @@
 #include "config.h"
 #include "identity.h"
 #include "haptics.h"
-#include "fault_diag.h"
 #include "rf_link.h"
 #include "triton.h"
 #include "mode_lizard.h"
@@ -219,10 +218,6 @@ static void handleSet(int slot, uint8_t rid, hid_report_type_t type,
 	uint8_t cmd = b[0], len = (n > 1) ? b[1] : 0;
 	const uint8_t *pl = b + 2;
 	uint16_t pln = (n >= 2) ? n - 2 : 0;
-
-	// Every feature SET goes to the flight recorder (survives a watchdog reset). This runs ON the fragile usbd task, so the
-	// command flood that (theory) overflows it lands in the post-mortem trail rather than being lost with USB.
-	faultDiagTrace(FR_SET, (uint16_t)((rid << 8) | cmd));
 
 	// Disable lizard if requested by host.
 	if (cmd == IBEX_CMD_SET_SETTINGS_VALUES) {
@@ -484,9 +479,6 @@ static uint16_t handleGet(int slot, uint8_t rid, hid_report_type_t type,
 	if (n > reqlen)
 		n = reqlen;
 	memcpy(buf, S.resp, n);
-	// Flight recorder (every GET, un-deduped): a read STORM -- e.g. the "AE x39" identity hammering seen before
-	// the identity fix -- is itself a wedge signal, so we want it filling the post-mortem trail if it happens.
-	faultDiagTrace(FR_GET, (uint16_t)((rid << 8) | S.resp[0]));
 	return n;
 }
 

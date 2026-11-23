@@ -8,7 +8,6 @@
 #include "puck_hid.h"
 #include "steam_commands.h"
 
-#include "fault_diag.h" // faultDiagTrace() -- flight recorder
 // USBDevice.suspended() -> autonomous controller power-off on host sleep
 #include <Adafruit_TinyUSB.h>
 #include <Arduino.h>
@@ -33,7 +32,6 @@ void hapticSendShutdown(uint8_t slot)
 	// slot-targeted: Steam's 0x9F arrives on ONE controller's interface and must power off only that
 	// controller (broadcasting it killed every connected controller when the user turned off one). The
 	// broadcast default (0xFF) remains for the trigger that logically means "all off": host suspend.
-	faultDiagTrace(FR_OFF, slot);
 	for (uint8_t i = 0; i < HAPTIC_SHUTDOWN_SHOTS; i++)
 		relayEnqueue(IBEX_CMD_TURN_OFF_CONTROLLER, OFF, sizeof OFF,
 			     false, slot);
@@ -118,7 +116,6 @@ bool relayEnqueue(uint8_t rid, const uint8_t *payload, uint8_t plen,
 	}
 
 	__set_PRIMASK(pm);
-	faultDiagTrace(FR_RELAY, (uint16_t)((slot << 8) | rid));
 	return true;
 }
 void relayClearSlot(uint8_t slot)
@@ -168,7 +165,6 @@ static void hapticCancelPendingOn(int slot)
 			if (!guard--) {
 				g_rqHead[s] = g_rqTail[s] = 0;
 				g_ringFault++;
-				faultDiagTrace(FR_RINGF, g_ringFault);
 				break;
 			}
 			RelayMsg &m = g_rq[s][i];
@@ -328,7 +324,6 @@ bool rfConnFlushRelay(uint8_t ch, uint8_t s1)
 		if (!guard--) {
 			g_rqHead[cur] = g_rqTail[cur] = 0;
 			g_ringFault++;
-			faultDiagTrace(FR_RINGF, g_ringFault);
 			break;
 		}
 		RelayMsg &m = g_rq[cur][g_rqTail[cur]];
@@ -606,13 +601,9 @@ void hapticTask()
 	if (susp && !wasSusp) {
 		suspSinceMs = millis();
 		suspArmed = true;
-		faultDiagTrace(FR_SUSP, 0);
 	}
-	if (!susp) {
-		if (wasSusp)
-			faultDiagTrace(FR_RESUME, 0);
+	if (!susp)
 		suspArmed = false;
-	}
 	// g_suspendOff: opt out of the power-off entirely -- keeps the controller awake through host sleep so its
 	// short-Steam-press remote wakeup stays available (see haptics.h). Disarm either way so re-enabling it
 	// mid-suspend can't fire late.

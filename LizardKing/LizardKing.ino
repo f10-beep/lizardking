@@ -20,7 +20,6 @@ using namespace Adafruit_LittleFS_Namespace;
 #include "serial_console.h"
 #include "wake_hid.h"
 #include "status_led.h"
-#include "fault_diag.h"
 #include "usb_tx.h"
 #include <stdio.h>
 
@@ -74,8 +73,30 @@ static void watchdogStart()
 	NRF_WDT->CRV = 8UL * 32768UL - 1;
 	NRF_WDT->RREN = WDT_RREN_RR0_Msk;
 	NRF_WDT->TASKS_START = 1;
-	faultDiagArmHangCapture();
-	faultDiagBlackBoxArm();
+}
+
+// Why the puck last reset, as the chip latched it: a watchdog reset is a hang
+// it recovered from, a lockup a fault.
+static const char *resetReason()
+{
+	uint32_t r = readResetReason();
+	if (r & POWER_RESETREAS_DOG_Msk)
+		return "watchdog";
+	if (r & POWER_RESETREAS_LOCKUP_Msk)
+		return "lockup";
+	if (r & POWER_RESETREAS_SREQ_Msk)
+		return "software";
+	if (r & POWER_RESETREAS_RESETPIN_Msk)
+		return "pin";
+	return "power-on";
+}
+
+void printBoot()
+{
+	Serial.printf("# LizardKing up: unit=%s board=%s mode=%s reset=%s\n",
+		      g_unit, g_board,
+		      g_active->isPuck() ? "steam" : "lizardking",
+		      resetReason());
 }
 
 void setup()
@@ -111,39 +132,23 @@ void setup()
 	}
 	usbTxBegin();
 	hapticInit();
-	Serial.printf("# LizardKing up: unit=%s board=%s mode=%s\n", g_unit,
-		      g_board, g_active->isPuck() ? "steam" : "lizardking");
-	faultDiagBoot();
+	printBoot();
 	watchdogStart();
 }
 
 void loop()
 {
 	NRF_WDT->RR[0] = WDT_RR_RR_Reload;
-	faultDiagBeat();
-	faultDiagStackTick();
-	faultDiagFlightTick();
 	if (g_dirty) {
 		g_dirty = false;
-		// a bond write stalls interrupts for ms: bracket it in the
-		// flight recorder
-		faultDiagTrace(FR_SAVE, 0);
 		saveBonds();
 	}
 	cfgTask();
-	// Each stage leaves a breadcrumb, so after a watchdog reset the next
-	// boot reports which stage wedged.
-	faultDiagSetStage(0);
 	g_active->task();
-	faultDiagSetStage(1);
 	serialConsolePoll();
-	faultDiagSetStage(2);
 	rfLinkTask();
-	faultDiagSetStage(3);
 	hapticTask();
-	faultDiagSetStage(4);
 	ledTask();
-	faultDiagSetStage(5);
 	// reports drain here, in the loop: sending off-loop jitters the RF poll
 	usbTxPump();
 }

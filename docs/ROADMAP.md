@@ -14,10 +14,6 @@ pass.
 - **Pairing without Steam.** Steam writes the bond to both the puck and
   the wired controller. Capturing what it sends the controller would let
   the Guide pair by itself and Steam mode go away entirely.
-- **Watchdog hang capture.** `WDT_IRQHandler` lacked `extern "C"`, so it
-  never replaced the vector and the hang capture never ran (upstream too).
-  Fixed in the import; confirm on hardware that a watchdog reset still
-  reports cleanly.
 - **USB ID.** Get a pid.codes ID before publishing; `1209:0001` is the
   test ID.
 - **First CI run.** The build workflow has only been checked locally (a

@@ -1,9 +1,8 @@
-// serial_console.h -- the CDC debug command line.
-//
-// Single-letter commands over USB CDC Serial, used during development and protocol RE: toggle RF diag modes,
-// poke radio registers live, switch USB mode, edit tunables, inject test haptics, dump capture history. The
-// operational firmware never needs it; it's the human/agent interface to everything under the hood. Present
-// only in puck modes (clean controller modes drop CDC). See the parser in serial_console.cpp for the full map.
+// serial_console.h -- the CDC command line: the Guide's protocol and the
+// tuning and diagnosis commands (serial_console.cpp lists them).
 #pragma once
 
-void serialConsolePoll(); // drain + dispatch CDC commands; call every loop()
+// drain and dispatch CDC commands; call every loop()
+void serialConsolePoll();
+// the boot line, with why the puck last reset (LizardKing.ino; console "UP")
+void printBoot();
