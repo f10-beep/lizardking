@@ -7,10 +7,10 @@ What's left of OpenPuck's user-facing configurability, and the code that only
 served it, goes next, one piece at a time, each followed by a simplification
 pass.
 
-- **Steam mode down to pairing.** `puck_hid` still carries upstream's full
-  Steam presentation and its lizard fallback (`mode_lizard`, `lizard_map`,
-  `MODE_LIZARD`). Keep what Steam needs to pair and, if it works out, drop
-  the rest.
+- **Steam mode down to pairing** (low priority). `puck_hid` still carries
+  upstream's full Steam presentation and its lizard fallback (`mode_lizard`,
+  `lizard_map`, `MODE_LIZARD`). Trimming it is complicated and risky and
+  buys little but flash space; leave it unless it gets in the way.
 - **Pairing without Steam.** Steam writes the bond to both the puck and
   the wired controller. Capturing what it sends the controller would let
   the Guide pair by itself and Steam mode go away entirely.
@@ -27,8 +27,8 @@ pass.
 
 Launch feature (in the first release): gyro aiming.
 
-- **Gyro aiming** (launch): built, in the grip (docs/DESIGN.md, Gyro
-  aiming). Tune the sensitivity curve and smoothing by hand in games
+- **Gyro aiming** (launch): built, with the right pad (docs/DESIGN.md,
+  Gyro aiming). Tune the sensitivity curve and smoothing by hand in games
   before release.
 - **Lift-off protection.** Lightening the fast-swipe smoothing (follow 30%)
   gave stronger flicks but slightly weaker lift-off protection; retune.
@@ -37,11 +37,24 @@ Launch feature (in the first release): gyro aiming.
 - **Keyboard.** Tune zones and texture.
 - **Pad pressure in the Guide's key map:** a subtle meter on each pad with
   notches at the click thresholds.
-- **Steam Input on.** Make the pads work with Steam Input enabled.
+- **Steam Input on.** Make sure everything works with Steam running and
+  Steam Input enabled, globally and per game: LizardKing presents a generic
+  Xbox 360 pad plus a keyboard and mouse, so Steam should take the pad like
+  any other, but its desktop layout for Xbox pads could turn the sticks and
+  buttons into a second mouse and keys on the desktop. Mostly testing.
+- **Long drags.** With the two-pad drag gone, a drag longer than one pad
+  swipe leans on the gyro (lifting the thumb lets go of the click). Check
+  it's enough in practice.
+- **Media next / previous.** Play/pause works; next and previous track
+  (the standard consumer usages) did nothing in YouTube, even with a
+  queue. Compare with a keyboard's media keys to see whose problem it is.
 - **LizardKing when wired.** A controller turned on while plugged into the
   PC by USB connects there directly, as a Steam Controller, and the puck
-  never hears it: LizardKing is gone until the cable comes out. Make it
-  work wired too.
+  never hears it: LizardKing is gone until the cable comes out. The trap
+  is charging from the PC: turn the controller off (Guide + Back) and on
+  again, and it's suddenly a Steam Controller. At least the Guide could
+  notice the wired controller (USB `28DE:1302`) and say to unplug it;
+  better, make LizardKing work wired.
 - **Keeping a tuned key map or constant through a reboot.** The console
   already changes both live (`~K`, `~T`); saving them to the puck's flash
   would let an owner keep a customization. Likely a popular request once
