@@ -37,11 +37,11 @@ Launch feature (in the first release): gyro aiming.
 - **Keyboard.** Tune zones and texture.
 - **Pad pressure in the Guide's key map:** a subtle meter on each pad with
   notches at the click thresholds.
-- **Steam Input on.** Make sure everything works with Steam running and
-  Steam Input enabled, globally and per game: LizardKing presents a generic
-  Xbox 360 pad plus a keyboard and mouse, so Steam should take the pad like
-  any other, but its desktop layout for Xbox pads could turn the sticks and
-  buttons into a second mouse and keys on the desktop. Mostly testing.
+- **Steam Input on.** Test games with Steam Input on and off: the pad
+  should pass through like any Xbox 360 pad, and the pads and gyro keep
+  driving the mouse. Steam's desktop layout doubling the sticks as a mouse
+  is possible in theory but never showed up with heavy keyboard-and-mouse
+  mappings on a Steam Controller and an Xbox Elite.
 - **Long drags.** With the two-pad drag gone, a drag longer than one pad
   swipe leans on the gyro (lifting the thumb lets go of the click). Check
   it's enough in practice.

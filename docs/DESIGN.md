@@ -260,7 +260,14 @@ switches, both on the Guide button:
   turn from another keyboard or mouse, software-made ones like Steam
   Input's included, also puts it away, as a safety net; so do the
   controller disconnecting (the Guide button can't reach it then) and a
-  click on the tray icon.
+  click on the tray icon. A controller turned on while plugged into the PC
+  (to charge, say) skips the puck and talks to the PC as a wired Steam
+  Controller: when the Guide program sees that (the puck hearing no
+  controller, and the paired one, by the serial in its bond, on USB as
+  `28DE:1302`) it says "Unplug the controller and turn it back on" for six
+  seconds, once each time. Guide + Back turns the controller off only once
+  both are released: a Guide button still down would wake it straight back
+  up, wired.
   Switching layers, the panel entered lights up at once and the one left
   fades back over 80 ms, which takes the edge off quick switches.
   It stays light over a game: the window edge, panels and texture are
@@ -302,7 +309,8 @@ How it works:
   (`~m`), so it always matches what's flashed. `KS layer zoneR zoneL
   shift` arrives whenever the layer, a thumb's zone or Shift changes; `KK
   pad zone` for every typed key; `KG` on a Guide on/off press; `KI` on
-  Guide + Start; `KT connected battery charge signal keymap low` about
+  Guide + Start; `KT connected battery charge signal keymap low dev
+  serial` about
   once a second and at once when a switch changes; `KB
   buttons lt rt lx ly rx ry lpx lpy rpx rpy own0 own1 own2` for the live
   drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, the

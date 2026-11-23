@@ -1650,12 +1650,17 @@ static void confirm(bool on)
 	s_bumpAgainAt = on ? (millis() + 120) | 1 : 0;
 }
 
+// Guide + Back pressed: the controller goes off when both are released. A
+// Guide button still down as it powers off turns it straight back on, and
+// on its USB cable it then comes up wired, past the puck.
+static bool s_offPending;
+
 static void guideChord(uint32_t btn)
 {
-	// Back: the controller off, as Steam's "turn off controller" does
+	// Back: the controller off, as Steam's "turn off controller" does,
+	// once the chord is let go (see guideButton)
 	if (btn & TB_MENU) {
-		if (s_slot >= 0)
-			hapticSendShutdown((uint8_t)s_slot);
+		s_offPending = true;
 		return;
 	}
 	if (!(btn & (TB_RPADC | TB_LPADC | TB_VIEW)))
@@ -1737,6 +1742,11 @@ static uint32_t guideButton(uint32_t raw, uint32_t now)
 		down = false;
 		if (!spent)
 			guideTap(now, gamepad);
+	}
+	if (s_offPending && !(raw & (TB_STEAM | TB_MENU))) {
+		s_offPending = false;
+		if (s_slot >= 0)
+			hapticSendShutdown((uint8_t)s_slot);
 	}
 	swallow &= raw;
 	return raw & ~TB_STEAM & ~swallow;
@@ -1847,11 +1857,12 @@ void LizardKingController::emit(uint8_t slot, uint32_t generation,
 }
 
 // Status for the Guide, about once a second while it holds the port:
-// "KT connected battery% charge signal keymap low dev" (charge as in report
+// "KT connected battery% charge signal keymap low dev serial" (charge as in report
 // 0x43: 1 discharging, 2 charging, 4 charged, 0 unknown; signal in -dBm, 0 =
 // no sample yet; keymap the key map's size, 0 off, 1 large, 2 small, and low
 // its place; dev, the console
-// has the key map or a feel constant off what ships, see lkTune).
+// has the key map or a feel constant off what ships, see lkTune; serial,
+// from its bond, the connected controller's, else the paired one's, or "-").
 static bool devOverrides();
 static void streamStatus(uint32_t now)
 {
@@ -1865,8 +1876,24 @@ static void streamStatus(uint32_t now)
 			   0;
 	unsigned batt = on ? g_battery[s_slot] : 0;
 	unsigned charge = on ? g_batteryState[s_slot] : 0;
-	Serial.printf("KT %d %u %u %d %d %d %d\n", on ? 1 : 0, batt, charge,
-		      rssi, s_keymapSize, s_keymapLow, devOverrides());
+	// the bond record is [4 + 4 uuids][16 serial, ASCII, zero padded]; off,
+	// the first paired controller's
+	int bond = s_slot;
+	for (int i = 0; bond < 0 && i < NSLOT; i++)
+		if (g_slot[i].used)
+			bond = i;
+	char serial[17] = "-";
+	if (bond >= 0) {
+		memcpy(serial, g_slot[bond].rec + 8, 16);
+		serial[16] = 0;
+		for (char *c = serial; *c; c++)
+			if (*c <= ' ' || *c > '~')
+				*c = 0;
+		if (!serial[0])
+			strcpy(serial, "-");
+	}
+	Serial.printf("KT %d %u %u %d %d %d %d %s\n", on ? 1 : 0, batt, charge,
+		      rssi, s_keymapSize, s_keymapLow, devOverrides(), serial);
 }
 
 void LizardKingController::task()

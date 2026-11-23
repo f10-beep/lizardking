@@ -97,6 +97,9 @@ namespace LizardKing
 	struct CtlStatus
 	{
 		public bool Connected, KeymapLow, Dev;
+		// the controller's serial, from its bond: the connected one's, else
+		// the paired one's ("-" if none)
+		public string Serial;
 		// the key map: 0 off, 1 large, 2 small
 		public int KeymapSize;
 		public int Battery, Charge, Rssi;
@@ -369,6 +372,48 @@ namespace LizardKing
 								uint command,
 								StringBuilder data,
 								ref uint size);
+
+		[StructLayout(LayoutKind.Sequential)]
+		public struct AppBarData
+		{
+			public uint Size;
+			public IntPtr Window;
+			public uint Message, Edge;
+			public Rect Rect;
+			public IntPtr Param;
+		}
+
+		[DllImport("shell32.dll")]
+		public static extern IntPtr SHAppBarMessage(uint message,
+							    ref AppBarData data);
+
+		// Where a popup by the tray should end: above the taskbar where it
+		// shows, even auto-hidden (then the working area is the whole
+		// screen, and the taskbar slides up over anything at its foot).
+		public static int AboveTaskbar()
+		{
+			const uint GetTaskbarPos = 5, EdgeBottom = 3;
+			var d = new AppBarData();
+			d.Size = (uint)Marshal.SizeOf(typeof(AppBarData));
+			var work = Screen.PrimaryScreen.WorkingArea;
+			if (SHAppBarMessage(GetTaskbarPos, ref d) == IntPtr.Zero ||
+			    d.Edge != EdgeBottom)
+				return work.Bottom;
+			int height = d.Rect.Bottom - d.Rect.Top;
+			return Math.Min(work.Bottom,
+					Screen.PrimaryScreen.Bounds.Bottom - height);
+		}
+
+		[DllImport("cfgmgr32.dll", CharSet = CharSet.Unicode)]
+		public static extern int CM_Locate_DevNodeW(out uint node, string id,
+							    uint flags);
+
+		// whether the device with this instance ID is present now
+		public static bool DevicePresent(string id)
+		{
+			uint node;
+			return CM_Locate_DevNodeW(out node, id, 0) == 0;
+		}
 
 		[StructLayout(LayoutKind.Sequential)]
 		public struct Rect
@@ -741,7 +786,7 @@ namespace LizardKing
 				inp.Own0 = Convert.ToUInt32(f[12], 16);
 				inp.Own1 = Convert.ToUInt32(f[13], 16);
 				app.Post(delegate { app.OnInput(inp); });
-			} else if (f[0] == "KT" && f.Length == 8) {
+			} else if (f[0] == "KT" && f.Length == 9) {
 				var st = new CtlStatus();
 				st.Connected = f[1] == "1";
 				st.Battery = int.Parse(f[2]);
@@ -750,6 +795,7 @@ namespace LizardKing
 				st.KeymapSize = int.Parse(f[5]);
 				st.KeymapLow = f[6] == "1";
 				st.Dev = f[7] == "1";
+				st.Serial = f[8];
 				app.Post(delegate { app.OnStatus(st); });
 			} else if (f.Length == 1 && f[0] == "KG") {
 				app.Post(delegate { app.ToggleGuide(); });
@@ -1125,6 +1171,8 @@ namespace LizardKing
 		public event Action Changed;
 		// a key, click or wheel turn from another keyboard or mouse
 		public event Action Dismiss;
+		// a device arrived or left (WM_DEVICECHANGE)
+		public event Action DevicesChanged;
 
 		CtlStatus status;
 
@@ -1146,10 +1194,12 @@ namespace LizardKing
 
 		protected override void WndProc(ref Message m)
 		{
-			const int WmInput = 0xFF;
+			const int WmInput = 0xFF, WmDeviceChange = 0x219;
 			if (m.Msg == WmInput && Dismiss != null &&
 			    RawSource.Dismisses(m.LParam))
 				Dismiss();
+			if (m.Msg == WmDeviceChange && DevicesChanged != null)
+				DevicesChanged();
 			base.WndProc(ref m);
 		}
 
@@ -1282,6 +1332,9 @@ namespace LizardKing
 		}
 
 		bool small;
+		// the large grids sit this much into the title bar's own margin, so
+		// they read as under the title rather than apart from it
+		const int TitleTuck = 14;
 
 		void FitSize()
 		{
@@ -1289,7 +1342,8 @@ namespace LizardKing
 			ClientSize = small ?
 				new Size(2 * c.Grid + c.PadGap + 2 * c.Margin,
 					 c.Grid + 2 * c.Margin) :
-				new Size(GridSize.Width, GridSize.Height + 44 + HeaderH);
+				new Size(GridSize.Width,
+					 GridSize.Height + 44 + HeaderH - TitleTuck);
 		}
 
 		// the puck owns the size (Guide + left pad click)
@@ -1433,7 +1487,7 @@ namespace LizardKing
 				       new[] { new Chord(low ? "Guide + right pad: move up" :
 							       "Guide + right pad: move down",
 							 0, false) });
-			g.TranslateTransform(0, HeaderH);
+			g.TranslateTransform(0, HeaderH - TitleTuck);
 			PaintKeys(g, Large, true, true, 1);
 		}
 
@@ -2164,7 +2218,8 @@ namespace LizardKing
 			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
 			if (pe.ClipRectangle.Top < HeaderH)
 				PaintHeader(g);
-			string[] names = { "Controller", "Keyboard" };
+			string[] names = { "Controller (default)",
+					   "Keyboard (touch both pads)" };
 			for (int i = 0; i < 2; i++)
 				if (pe.ClipRectangle.IntersectsWith(Panel(i)))
 					PaintController(g, i, names[i]);
@@ -2486,6 +2541,12 @@ namespace LizardKing
 			hide.Start();
 		}
 
+		protected void Pop(int ms)
+		{
+			hide.Interval = ms;
+			Pop();
+		}
+
 		protected void Frame(Graphics g, Color edge)
 		{
 			g.SmoothingMode = SmoothingMode.AntiAlias;
@@ -2515,8 +2576,17 @@ namespace LizardKing
 
 		public void Say(string t)
 		{
+			Say(t, 1100);
+		}
+
+		// sized to the text, centred where the toast sits
+		public void Say(string t, int ms)
+		{
 			text = t;
-			Pop();
+			int w = Math.Max(360, TextRenderer.MeasureText(t, font).Width + 56);
+			var s = Screen.PrimaryScreen.WorkingArea;
+			Bounds = new Rectangle(s.X + (s.Width - w) / 2, Top, w, Height);
+			Pop(ms);
 		}
 
 		protected override void OnPaint(PaintEventArgs pe)
@@ -2551,12 +2621,14 @@ namespace LizardKing
 
 		public HintCard() : base(5000, Theme.Bg, new Size(380, 270))
 		{
-			var s = Screen.PrimaryScreen.WorkingArea;
-			Location = new Point(s.Right - Width - 12, s.Bottom - Height - 12);
 		}
 
+		// placed as it appears: the taskbar may have moved or hidden
 		public void Appear()
 		{
+			var s = Screen.PrimaryScreen.WorkingArea;
+			Location = new Point(s.Right - Width - 12,
+					     Native.AboveTaskbar() - Height - 12);
 			Pop();
 		}
 
@@ -2708,6 +2780,7 @@ namespace LizardKing
 				if (this.guideUp)
 					ToggleGuide();
 			};
+			Keys.DevicesChanged += CheckWired;
 			// practice mode: while the Guide is up the controller's input
 			// goes to it, not to the apps behind it
 			beats.Interval = 250;
@@ -2835,6 +2908,22 @@ namespace LizardKing
 			guide.OnInput(inp);
 		}
 
+		// The controller turned on while on its cable (charging, say) skips
+		// the puck for the PC, and LizardKing is gone until it's unplugged:
+		// say so, once each time. It's the paired controller, by the serial
+		// the puck reports, on USB as a wired Steam Controller.
+		bool wiredSaid;
+
+		void CheckWired()
+		{
+			bool wired = hasSwitches && !last.Connected && last.Serial != "-" &&
+				     Native.DevicePresent(@"USB\VID_28DE&PID_1302\" +
+							  last.Serial);
+			if (wired && !wiredSaid)
+				toast.Say("Unplug the controller and turn it back on", 6000);
+			wiredSaid = wired;
+		}
+
 		public void OnStatus(CtlStatus st)
 		{
 			// without the controller the Guide button can't put it away
@@ -2852,8 +2941,11 @@ namespace LizardKing
 					toast.Say(st.KeymapLow ? "Key map bottom" :
 								 "Key map top");
 			}
+			bool lost = hasSwitches && last.Connected && !st.Connected;
 			hasSwitches = true;
 			last = st;
+			if (lost)
+				CheckWired();
 			Keys.Low = st.KeymapLow;
 			Keys.Small = st.KeymapSize == 2;
 			Keys.Allowed = !guideUp && st.KeymapSize > 0;
