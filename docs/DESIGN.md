@@ -108,9 +108,13 @@ Two layers, and every hand position means one thing:
   Right click is QAM, between the pads, so the right thumb reaches both
   main buttons.
 - **The buttons are always the gamepad's** outside the keyboard, so a
-  button never changes meaning mid-game.
+  button never changes meaning mid-game, except the face buttons: they sit
+  beside the pointer and are always the desktop's. X and Y are back and
+  forward (M4, M5); A and B are Enter and Esc, confirm and cancel as in
+  every gamepad menu, so a press out of habit does what it meant. The
+  gamepad's A/B/X/Y are the back buttons.
 - **Both pads: keyboard.** The back buttons become the modifiers, the
-  triggers Space and Backspace, the bumpers Tab and Enter, and the pads
+  triggers Space and Backspace, the bumpers Tab and Delete, and the pads
   type (see Keyboard layer).
 - **Modifiers reach the mouse by being held.** A held button keeps the
   meaning it had when pressed until released, so Ctrl or Shift pressed with
@@ -130,9 +134,10 @@ Two layers, and every hand position means one thing:
 | Button | Controller layer | Keyboard layer |
 |--------|---------------|----------------|
 | R4 / L4 / R5 / L5 | A / B / X / Y | Win / Shift / Alt / Ctrl |
-| A / B / X / Y | A / B / X / Y | — |
+| A / B | Enter / Esc | — |
+| X / Y | back / forward (M4 / M5) | — |
 | D-pad | D-pad | — |
-| LB / RB | LB / RB | Tab / Enter |
+| LB / RB | LB / RB | Tab / Delete |
 | LT / RT | LT / RT | Backspace / Space (a light pull) |
 | View / Menu | Start / Back | — |
 | Steam | the Guide button (see above) | chords only |
@@ -142,8 +147,9 @@ Two layers, and every hand position means one thing:
 | Left pad | scroll | types |
 | Left pad click | middle click (M3) | types |
 
-Esc, the arrows, the page keys and the media keys are key map keys (see
-Keyboard layer), so the buttons stay the gamepad's.
+The arrows, the page keys and the media keys are key map keys (see
+Keyboard layer). Typing reaches Enter by lifting the right thumb to A, or
+as the key map's numpad Enter.
 
 The back buttons carry the primary functions because they are the easiest
 to reach. In the keyboard layer they are the modifiers, so Shift and Ctrl
@@ -211,15 +217,14 @@ can be held with the left hand while a thumb lifts to drive the cursor.
   resting up, the numpad with it in the top inner corner, F-keys in the top
   outer corner, the rarer letters with it outward, punctuation in the
   spare zones of the number and outward pages,
-  navigation, Esc and media in the bottom outer corner, the remaining keys
-  and the mouse's back and forward drawn inward, Sleep and Power drawn in
-  and down.
+  navigation and media in the bottom outer corner, the remaining keys
+  with Sleep and Power drawn in and down.
 - The center zones do nothing, alone or together.
 - Key clicks pulse for twice as long as mouse clicks (3,000 / 1,400 µs);
   0x81 has no gain setting.
 - Index fingers (keyboard layer): RT = Space, LT = Backspace
   (a light pull: on at 24/255, off at 12, with a click pulse on that side),
-  RB = Enter, LB = Tab. Back buttons stay Shift / Ctrl / Alt / Win.
+  RB = Delete, LB = Tab. Back buttons stay Shift / Ctrl / Alt / Win.
 
 ## LizardKing Guide
 

@@ -57,4 +57,5 @@ show where clicks are; next / previous track send the standard usages
 (play/pause works), so a report would be the first sign of trouble; a
 controller turned on wired stays wired (the Guide says to unplug and turn
 it back on), while one plugged in once on keeps LizardKing; the face
-buttons stay A/B/X/Y beside the back buttons.
+buttons are the desktop's (back, forward, Enter, Esc), and the back
+buttons alone are the gamepad's A/B/X/Y.

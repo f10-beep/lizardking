@@ -411,6 +411,7 @@ struct Pad {
 	uint8_t kst; // KS_* typing state of this pad's click
 	uint8_t key; // HID key held, 0 = none
 	uint8_t keyZone; // zone the held key was typed in
+	uint32_t keyMs; // when the held key was typed
 	uint8_t zone; // zone last report
 	bool edge; // in the outer edge band
 };
@@ -509,10 +510,6 @@ static uint16_t gamepadButtons(uint32_t b)
 		{ TB_L4, XB_B },
 		{ TB_R5, XB_X },
 		{ TB_L5, XB_Y },
-		{ TB_A, XB_A },
-		{ TB_B, XB_B },
-		{ TB_X, XB_X },
-		{ TB_Y, XB_Y },
 		{ TB_DUP, XB_DUP },
 		{ TB_DDN, XB_DDOWN },
 		{ TB_DLF, XB_DLEFT },
@@ -536,6 +533,7 @@ static uint16_t gamepadButtons(uint32_t b)
 
 struct LkKey {
 	uint32_t tb;
+	uint8_t layer;
 	uint8_t mod;
 	uint8_t key;
 };
@@ -543,16 +541,22 @@ static const LkKey BUTTON_KEYS[] = {
 	// back buttons: modifiers. A held one stays a modifier when a thumb
 	// lifts to the pointer (Ctrl-click, Shift-drag). Shift over Ctrl on
 	// the left as on a keyboard; Alt mirrors Ctrl.
-	{ TB_L4, KEYBOARD_MODIFIER_LEFTSHIFT, 0 },
-	{ TB_L5, KEYBOARD_MODIFIER_LEFTCTRL, 0 },
-	{ TB_R4, KEYBOARD_MODIFIER_LEFTGUI, 0 },
-	{ TB_R5, KEYBOARD_MODIFIER_LEFTALT, 0 },
-	// index fingers: the most frequent non-letter keys, reachable while the
-	// thumbs are on the pads
-	{ TB_R2, 0, HID_KEY_SPACE },
-	{ TB_L2, 0, HID_KEY_BACKSPACE },
-	{ TB_RB, 0, HID_KEY_ENTER },
-	{ TB_LB, 0, HID_KEY_TAB },
+	{ TB_L4, LY_KBD, KEYBOARD_MODIFIER_LEFTSHIFT, 0 },
+	{ TB_L5, LY_KBD, KEYBOARD_MODIFIER_LEFTCTRL, 0 },
+	{ TB_R4, LY_KBD, KEYBOARD_MODIFIER_LEFTGUI, 0 },
+	{ TB_R5, LY_KBD, KEYBOARD_MODIFIER_LEFTALT, 0 },
+	// index fingers: the keys typing needs between letters, reachable while
+	// the thumbs are on the pads
+	{ TB_R2, LY_KBD, 0, HID_KEY_SPACE },
+	{ TB_L2, LY_KBD, 0, HID_KEY_BACKSPACE },
+	{ TB_RB, LY_KBD, 0, HID_KEY_DELETE },
+	{ TB_LB, LY_KBD, 0, HID_KEY_TAB },
+	// face buttons, below the mouse's back and forward (see mouseStep):
+	// confirm and cancel where every gamepad menu has them, so a press out
+	// of habit does what it meant. Typing reaches Enter by lifting the
+	// right thumb.
+	{ TB_A, LY_CTRL, 0, HID_KEY_ENTER },
+	{ TB_B, LY_CTRL, 0, HID_KEY_ESCAPE },
 };
 
 // ---- keyboard layer: 3x3 zones per pad ----
@@ -581,9 +585,18 @@ static const uint16_t MEDIA_USAGE[] = {
 	HID_USAGE_CONSUMER_MUTE,
 };
 // The Copilot key, which Windows defines as Win + Shift + F23: one key here,
-// as on the keyboards that have it. The mouse's back and forward buttons
-// (M4, M5) and the system's Sleep and Power are key map keys too.
-enum { KM_SLEEP = 0xEB, KM_POWER, KM_M4, KM_M5, KM_COPILOT };
+// as on the keyboards that have it. The system's Sleep and Power are key map
+// keys too.
+enum { KM_SLEEP = 0xEB, KM_POWER, KM_COPILOT };
+// Sleep and Power act only once held this long (the Guide's key map fills
+// their cell meanwhile, and the pad bumps when they act): a stray click would
+// end the session, and neither needs to be quick.
+#define SYS_HOLD_MS 1000
+
+static bool holdKey(uint8_t key)
+{
+	return key == KM_SLEEP || key == KM_POWER;
+}
 #define K(k) HID_KEY_##k
 static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 	// PAD_R clicked; ring N NE E SE S SW W NW
@@ -606,24 +619,23 @@ static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 		{ K(D), K(W), K(T), K(P), K(M), K(J), K(V), K(Z) },
 		// left thumb center
 		{ K(N), K(C), K(S), K(F), K(R), K(B), K(L), K(G) },
-		// left thumb E: keys that aren't F-keys or typing. Forward (M5)
-		// on W: thumbs drawn inward, each mouse button's zone is the
-		// other's page, as with the brackets. The top row is a
-		// keyboard's Print Screen, Scroll Lock, Pause; the AI key on E
-		// (both thumbs the same way); Delete mirrors Insert. SW stays
-		// empty: it neighbours Power (see the left thumb SE page).
-		{ K(SCROLL_LOCK), K(PAUSE), KM_COPILOT, 0, K(DELETE), 0, KM_M5,
-		  K(PRINT_SCREEN) },
+		// left thumb E: free, and beside Power
+		{},
 		// left thumb SW: the arrows by direction, the page and line
 		// ends in the corners as on a keyboard's nav cluster
 		{ K(ARROW_UP), K(PAGE_UP), K(ARROW_RIGHT), K(PAGE_DOWN),
 		  K(ARROW_DOWN), K(END), K(ARROW_LEFT), K(HOME) },
 		// left thumb S: free, and beside Power
 		{},
-		// left thumb SE: Power on SW (see the left pad's SW page). The
-		// pages beside this one leave SW empty, so reaching Power by
-		// mistake takes more than one misstep.
-		{ 0, 0, 0, 0, 0, KM_POWER, 0, 0 },
+		// left thumb SE: keys that aren't F-keys or typing, on a corner
+		// page the resting thumb finds blind. The top row is a
+		// keyboard's Print Screen, Scroll Lock, Pause; the AI key on the
+		// outer edge, mirroring Caps Lock. Power on SW (see the left
+		// pad's SW page) with every key two zones from it, and the pages
+		// beside this one leave SW empty, so reaching Power by mistake
+		// takes more than one misstep.
+		{ K(SCROLL_LOCK), K(PAUSE), KM_COPILOT, 0, 0, KM_POWER, 0,
+		  K(PRINT_SCREEN) },
 	},
 	// PAD_L clicked
 	{
@@ -638,27 +650,27 @@ static const uint8_t KEYMAP[2][Z_COUNT][8] = {
 		{ 0, K(BRACKET_LEFT), K(5), K(4), K(3), K(2), K(1), K(GRAVE) },
 		// right thumb NE: F1..F5 where 1..5 are, F11 on top
 		{ K(F11), 0, K(F5), K(F4), K(F3), K(F2), K(F1), 0 },
-		// right thumb W: back (M4) on E; Caps Lock on the outer edge as
-		// on a keyboard; Num Lock on top, mirroring Scroll Lock; Insert
-		// mirrors Delete. SE stays empty, beside Sleep.
-		{ K(NUM_LOCK), 0, KM_M4, 0, K(INSERT), 0, K(CAPS_LOCK), 0 },
+		// right thumb W: free, and beside Sleep
+		{},
 		// right thumb center
 		{ K(O), K(PERIOD), K(U), K(COMMA), K(I), K(A), K(E), K(Y) },
 		// right thumb E: the rarer letters (see the right pad's W page),
 		// and the rest of the punctuation in the zones they leave
 		{ K(SEMICOLON), K(APOSTROPHE), K(Q), K(SLASH), K(K), K(X), K(H),
 		  K(BACKSLASH) },
-		// right thumb SW: Sleep on SE. Thumbs drawn in and down, each
-		// zone is the other's page, as with M4 and M5; nothing else is
-		// on these pages, and the pages beside them leave SE empty, so
-		// reaching Sleep by mistake takes more than one misstep.
-		{ 0, 0, 0, KM_SLEEP, 0, 0, 0, 0 },
+		// right thumb SW: the rest of the keys that aren't F-keys or
+		// typing (see the right pad's SE page). Num Lock mirrors Scroll
+		// Lock, Insert Print Screen; Caps Lock on the outer edge as on a
+		// keyboard. Sleep on SE: thumbs drawn in and down, each zone is
+		// the other's page, as with T and H; every key is two zones from
+		// it, and the pages beside this one leave SE empty.
+		{ K(NUM_LOCK), K(INSERT), 0, KM_SLEEP, 0, 0, K(CAPS_LOCK), 0 },
 		// right thumb S: free, and beside Sleep
 		{},
-		// right thumb SE: Esc top left, play/pause top center; volume
-		// along the bottom, mute in the corner
+		// right thumb SE: play/pause top center; volume along the
+		// bottom, mute in the corner
 		{ KM_PLAY, 0, KM_NEXT, KM_VOL_UP, KM_VOL_DOWN, KM_MUTE, KM_PREV,
-		  K(ESCAPE) },
+		  0 },
 	},
 };
 #undef K
@@ -1083,6 +1095,7 @@ static void typeKey(int i, uint8_t key, uint8_t z)
 	s_pad[i].kst = KS_KEY;
 	s_pad[i].key = key;
 	s_pad[i].keyZone = z;
+	s_pad[i].keyMs = millis();
 	hapticKey(PULSE_SIDE[i], true);
 }
 
@@ -1140,6 +1153,24 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 	}
 }
 
+// Sleep and Power are a deliberate hold, so unlike other held keys anything
+// else cancels them, as sliding off their zone does: another button, the other
+// pad's click, the other thumb changing page or lifting.
+static void holdGuard(uint32_t raw, const uint8_t zone[2])
+{
+	for (int i = 0; i < 2; i++) {
+		Pad &pd = s_pad[i];
+		int8_t pos = RING_POS[zone[i]];
+		if (!holdKey(pd.key) ||
+		    (pos >= 0 && s_keymap[i][zone[1 - i]][pos] == pd.key &&
+		     !(raw & LK_BTN_MASK & ~CLICK_BIT[i])))
+			continue;
+		hapticKey(PULSE_SIDE[i], false);
+		pd.key = 0;
+		pd.kst = KS_DEAD;
+	}
+}
+
 // Trigger keys have no physical click at a light pull: pulse the pad on that
 // side on press and release, in the keyboard layer.
 static void triggerPulses(uint32_t raw)
@@ -1188,22 +1219,29 @@ static void zoneHaptics(const PuckInput &in, const uint8_t zone[2],
 }
 
 // Guide feed (tools/guide): a "KS layer zoneR zoneL
-// shift" line whenever one of them changes, only while a host holds the serial
+// shift hold" line whenever one of them changes, only while a host holds the serial
 // port open, and skipped (retried next report) rather than blocking when the
 // CDC buffer is full.
-static uint8_t s_ksLast[4] = { 0xFF, 0xFF, 0xFF, 0xFF };
+static uint8_t s_ksLast[5] = { 0xFF, 0xFF, 0xFF, 0xFF, 0xFF };
 
 static void streamState(const uint8_t zone[2])
 {
 	// the Shift held, whether or not it reaches the host (the Guide holds
 	// the host's input while it's up, and its key map still shifts)
 	bool shift = s_own[LY_KBD] & TB_L4;
-	const uint8_t cur[4] = { s_layer, zone[PAD_R], zone[PAD_L], shift };
+	// a bit per pad holding Sleep or Power, for the key map's fill
+	uint8_t hold = 0;
+	for (int i = 0; i < 2; i++)
+		if (holdKey(s_pad[i].key))
+			hold |= 1 << i;
+	const uint8_t cur[5] = { s_layer, zone[PAD_R], zone[PAD_L], shift,
+				 hold };
 	if (!memcmp(cur, s_ksLast, sizeof cur) || !Serial ||
 	    Serial.availableForWrite() < 24)
 		return;
 	memcpy(s_ksLast, cur, sizeof cur);
-	Serial.printf("KS %u %u %u %u\n", cur[0], cur[1], cur[2], cur[3]);
+	Serial.printf("KS %u %u %u %u %u\n", cur[0], cur[1], cur[2], cur[3],
+		      cur[4]);
 }
 
 // Live input for the Guide's controller drawing: "KB buttons lt rt lx ly rx
@@ -1266,13 +1304,15 @@ static void mediaStep()
 {
 	uint16_t usage = 0;
 	uint8_t sys = 0;
-	for (const auto &pd : s_pad) {
+	for (int i = 0; i < 2; i++) {
+		const Pad &pd = s_pad[i];
 		if (pd.key >= KM_VOL_DOWN)
 			usage = MEDIA_USAGE[pd.key - KM_VOL_DOWN];
-		if (pd.key == KM_POWER)
-			sys = 1;
-		if (pd.key == KM_SLEEP)
-			sys = 2;
+		if (!holdKey(pd.key) || millis() - pd.keyMs < SYS_HOLD_MS)
+			continue;
+		sys = pd.key == KM_POWER ? 1 : 2;
+		if (!s_sentSystem && !guideHolds())
+			hapticTone(TONE_SIDE[i], LK_BUMP_DB, LK_BUMP_DUR);
 	}
 	sendMedia(usage);
 	sendSystem(sys);
@@ -1282,7 +1322,7 @@ static void keyboardStep()
 {
 	uint8_t mod = 0, keys[6] = {}, nk = 0;
 	for (const auto &k : BUTTON_KEYS) {
-		if (!(s_own[LY_KBD] & k.tb))
+		if (!(s_own[k.layer] & k.tb))
 			continue;
 		mod |= k.mod;
 		if (k.key && nk < 6)
@@ -1615,12 +1655,12 @@ static void mouseStep(const PuckInput &in, uint8_t touchLayer, int rdx, int rdy,
 	// drives the pointer
 	if (s_own[LY_CTRL] & TB_QAM)
 		mbtn |= MOUSE_BUTTON_RIGHT;
-	for (const auto &pd : s_pad) {
-		if (pd.key == KM_M4)
-			mbtn |= MOUSE_BUTTON_BACKWARD;
-		if (pd.key == KM_M5)
-			mbtn |= MOUSE_BUTTON_FORWARD;
-	}
+	// back and forward on the face's upper pair, back on the left as in a
+	// browser
+	if (s_own[LY_CTRL] & TB_X)
+		mbtn |= MOUSE_BUTTON_BACKWARD;
+	if (s_own[LY_CTRL] & TB_Y)
+		mbtn |= MOUSE_BUTTON_FORWARD;
 	sendMouse(mbtn, dx, dy, wheel);
 }
 
@@ -1771,6 +1811,7 @@ static void lkProcess(const PuckInput &in)
 	const int travel[2] = { abs(rdx) + abs(rdy), abs(ldx) + abs(ldy) };
 
 	padClicks(raw, zone);
+	holdGuard(raw, zone);
 	triggerPulses(raw);
 	zoneHaptics(in, zone, wasOn, travel);
 	streamState(zone);

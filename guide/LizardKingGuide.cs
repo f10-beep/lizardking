@@ -62,6 +62,8 @@ namespace LizardKing
 	{
 		public int Layer, ZoneR, ZoneL;
 		public bool Shift;
+		// a bit per pad (right 1, left 2) holding Sleep or Power
+		public int Hold;
 
 		public PuckState(int layer, int zr, int zl, bool shift)
 		{
@@ -69,6 +71,7 @@ namespace LizardKing
 			ZoneR = zr;
 			ZoneL = zl;
 			Shift = shift;
+			Hold = 0;
 		}
 	}
 
@@ -268,7 +271,7 @@ namespace LizardKing
 				// Sleep and Power as IEC 5009 draws them: the
 				// moon and the power symbol
 				{ 0xEB, "\u23fe" }, { 0xEC, "\u23fb" },
-				{ 0xED, "M4" }, { 0xEE, "M5" }, { 0xEF, "\u2726" },
+				{ 0xED, "\u2726" },
 			};
 		// US layout: what Shift turns each main-block symbol into
 		const string Plain = "1234567890-=[]\\;',./`";
@@ -774,11 +777,12 @@ namespace LizardKing
 			} else if (f[0] == "KM" && f.Length == 2 && f[1] == "end") {
 				var copy = (int[,,])keymap.Clone();
 				app.Post(delegate { app.OnKeymap(copy); });
-			} else if (f[0] == "KS" && (f.Length == 4 || f.Length == 5)) {
-				// older firmware sends no shift field
+			} else if (f[0] == "KS" && f.Length >= 4 && f.Length <= 6) {
+				// older firmware sends no shift or hold field
 				var st = new PuckState(int.Parse(f[1]), int.Parse(f[2]),
 						       int.Parse(f[3]),
-						       f.Length == 5 && f[4] != "0");
+						       f.Length >= 5 && f[4] != "0");
+				st.Hold = f.Length == 6 ? int.Parse(f[5]) : 0;
 				Hand(null, st);
 			} else if (f[0] == "KB" && f.Length == 14) {
 				var inp = new InputState();
@@ -1341,6 +1345,13 @@ namespace LizardKing
 
 		int[,,] keymap;
 		PuckState state = new PuckState(0, Center, Center, false);
+		// Sleep and Power act only once held as long as the firmware's
+		// SYS_HOLD_MS: their cell fills meanwhile, so a key that seems to
+		// do nothing shows it is on its way
+		const int HoldMs = 1000;
+		readonly Stopwatch held = new Stopwatch();
+		readonly System.Windows.Forms.Timer holding =
+			new System.Windows.Forms.Timer { Interval = 15 };
 		bool low = true, allowed;
 
 		// raised whenever the key map's picture changes (the Guide window
@@ -1377,6 +1388,13 @@ namespace LizardKing
 		{
 			FitSize();
 			Place();
+			holding.Tick += delegate {
+				if (held.ElapsedMilliseconds >= HoldMs)
+					holding.Stop();
+				Redraw();
+				if (Changed != null)
+					Changed();
+			};
 		}
 
 		public bool HasKeymap
@@ -1504,6 +1522,12 @@ namespace LizardKing
 
 		public void OnState(PuckState st)
 		{
+			if (st.Hold == 0) {
+				holding.Stop();
+			} else if (state.Hold == 0) {
+				held.Restart();
+				holding.Start();
+			}
 			state = st;
 			UpdateShown();
 			Redraw();
@@ -1570,7 +1594,7 @@ namespace LizardKing
 			if (!legend)
 				return;
 			using (var b = new SolidBrush(Theme.Dim))
-				g.DrawString("LT Bksp   LB Tab   RB Enter   RT Space\n" +
+				g.DrawString("LT Bksp   LB Tab   RB Del   RT Space\n" +
 						     "L4 Shift   L5 Ctrl   R4 Win   R5 Alt",
 					     FontOf(10, false), b,
 					     new RectangleF(0, KeysSize.Height - 60,
@@ -1603,6 +1627,8 @@ namespace LizardKing
 					       z == 6 ? big : Shape.Small)) {
 					using (var b = new SolidBrush(fade(fill)))
 						g.FillPath(b, cell);
+					if (lit > 0 && (state.Hold & (1 << pad)) != 0)
+						FillHold(g, x, y, cs, fade);
 					using (var pen = new Pen(fade(Theme.Mix(Theme.Edge,
 										Theme.Accent,
 										lit)),
@@ -1638,6 +1664,17 @@ namespace LizardKing
 							cs / 2 - 6, x, x + cs);
 				}
 			}
+		}
+
+		// a pie filling clockwise from the top as the hold runs
+		void FillHold(Graphics g, int x, int y, int cs,
+			      Func<Color, Color> fade)
+		{
+			float p = Math.Min(1f, held.ElapsedMilliseconds / (float)HoldMs);
+			float inset = cs / 8f, d = cs - 2 * inset;
+			var c = Theme.Mix(Theme.AccentFill, Theme.Accent, 0.5);
+			using (var b = new SolidBrush(fade(c)))
+				g.FillPie(b, x + inset, y + inset, d, d, -90, 360 * p);
 		}
 
 		// Draws s centred on (x, y), shrunk to fit maxW and slid inside the
@@ -2019,7 +2056,8 @@ namespace LizardKing
 			new Dictionary<string, string> {
 				{ "lt", "LT" }, { "lb", "LB" }, { "dpad", "D-pad" },
 				{ "ls", "Stick · L3" }, { "l4", "B" }, { "l5", "Y" },
-				{ "rt", "RT" }, { "rb", "RB" }, { "face", "Y|X|B|A" },
+				{ "rt", "RT" }, { "rb", "RB" },
+				{ "face", "M5|M4|Esc|Enter" },
 				{ "rs", "Stick · R3" }, { "r4", "A" }, { "r5", "X" },
 				{ "back", "Back" }, { "xbox", "Guide" },
 				{ "start", "Start" }, { "qam", "M2" },
@@ -2029,7 +2067,7 @@ namespace LizardKing
 			new Dictionary<string, string> {
 				{ "lt", "Backspace" }, { "lb", "Tab" },
 				{ "l4", "Shift" }, { "l5", "Ctrl" },
-				{ "rt", "Space" }, { "rb", "Enter" },
+				{ "rt", "Space" }, { "rb", "Delete" },
 				{ "r4", "Win" }, { "r5", "Alt" },
 			},
 		};
@@ -2351,9 +2389,7 @@ namespace LizardKing
 			Brush bx = inp.Has(Btn.X) ? lit : normal;
 			Brush bb = inp.Has(Btn.B) ? lit : normal;
 			Brush ba = inp.Has(Btn.A) ? lit : normal;
-			bool letters = w[0].Length == 1;
-			float cx = x0 + (letters ? 70 : 140);
-			float dx = letters ? 50 : 18, dy = letters ? 48 : 52;
+			float cx = x0 + 140, dx = 18, dy = 52;
 			g.DrawString(w[0], label, by,
 				     new RectangleF(cx - 150, y - dy - 35, 300, 70),
 				     center);

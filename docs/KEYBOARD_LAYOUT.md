@@ -16,10 +16,11 @@ Status: **applied** (`KEYMAP` in `LizardKing/mode_lizardking.cpp`).
   the top outer corners); letters across the middle, the rarer ones a reach
   outward, as a keyboard's letter rows run wide; punctuation in the spare
   zones of the number and outward pages; the control keys on the bottom
-  outer corners; the bottom pages free. Every key a keyboard has, and the
-  mouse's back and forward buttons, is somewhere: the numpad on the top
-  inner corners, the keys that are neither F-keys nor typing on the inward
-  pages, Sleep and Power alone on the bottom inner corners.
+  outer corners; the bottom and inward pages free. Every key a keyboard
+  has is somewhere, here or on a button (Enter, Esc, Space, Backspace,
+  Tab, Delete and the modifiers; see docs/DESIGN.md): the numpad on the
+  top inner corners, the keys that are neither F-keys nor typing on the
+  bottom inner corners with Sleep and Power.
 
 ## Letters: placed by letter pairs
 
@@ -119,29 +120,9 @@ centers:
 
 So F5 is "5, with the other thumb slid out to the corner".
 
-**The bottom pages (other thumb resting in its bottom zone, S)** are free,
-and stay empty beside Sleep and Power.
-
-**The keys that aren't F-keys or typing: thumbs drawn inward** (left thumb
-E for the right pad, right thumb W for the left pad). The mouse's back
-button (M4) is the left pad's E zone and forward (M5) the right pad's W
-zone; each is the other's page selector, so with both thumbs parked inward
-they alternate without moving, as T and H do outward.
-
-The right pad's top row is a keyboard's Print Screen, Scroll Lock and
-Pause, with Num Lock mirroring Scroll Lock on the left pad. The AI key (✦,
-Windows' Copilot key) takes the right pad's E, where both thumbs point the
-same way; Caps Lock sits on the left pad's outer edge, as on a keyboard;
-Insert and Delete mirror each other in the bottom centers; the inner bottom
-corners stay empty, beside Sleep and Power. There is no Menu key: Shift +
-F10 does the same.
-
-```
-   left pad              right pad
-   ·     NumLk  ·        PrtSc  ScrLk  Pause
-   Caps  ·      M4       M5     ·      ✦
-   ·     Ins    ·        ·      Del    ·
-```
+**The bottom pages (other thumb resting in its bottom zone, S) and the
+inward pages (left thumb E, right thumb W)** are free. Both sit beside
+Sleep and Power and stay empty there.
 
 **The numpad: other thumb resting in its top inner corner** (right thumb
 NW for the left pad, left thumb NE for the right pad), next to the number
@@ -160,35 +141,46 @@ These are real numpad keys, so Windows treats them as it treats a
 keyboard's: with Num Lock off, or with Shift held while it's on, 3 is Page
 Down, `.` is Delete, and so on.
 
-**Sleep and Power: thumbs drawn in and down** (left thumb SE for the right
-pad, right thumb SW for the left pad). Sleep (⏾) is the left pad's SE zone
-and Power (⏻) the right pad's SW zone, the pages' paired spots, as M4 and M5
-are above them. Nothing else is on these pages, so nothing near them is
-clicked by mistake. Windows treats them as the PC's own buttons: Sleep
-sleeps, Power does what the power button is set to do.
+**The keys that aren't F-keys or typing: thumbs drawn in and down** (left
+thumb SE for the right pad, right thumb SW for the left pad), a corner the
+resting thumb finds blind. The right pad's top row is a keyboard's Print
+Screen, Scroll Lock and Pause; the left pad mirrors it with Insert and Num
+Lock. Caps Lock and the AI key (✦, Windows' Copilot key) take the outer
+edges, Caps Lock as on a keyboard. There is no Menu key: Shift + F10 does
+the same.
+
+Sleep (⏾) is the left pad's SE zone and Power (⏻) the right pad's SW zone,
+the pages' paired spots. Every other key on these pages is two zones from
+them, and the pages beside leave those zones empty, so reaching either by
+mistake takes more than one misstep. They also act only when held for a
+second: the key map fills their cell meanwhile, and a bump says they have
+acted. Let go or slide off sooner and nothing happens. Unlike other held
+keys, anything else cancels the hold too: another button, the other pad's
+click, the other thumb changing page or lifting. Windows treats them as the PC's own buttons: Sleep sleeps, Power
+does what the power button is set to do.
 
 ```
-   left pad        right pad
-   ·  ·  ·         ·  ·  ·
-   ·  ·  ·         ·  ·  ·
-   ·  ·  ⏾         ⏻  ·  ·
+   left pad              right pad
+   ·     NumLk  Ins      PrtSc  ScrLk  Pause
+   Caps  ·      ·        ·      ·      ✦
+   ·     ·      ⏾        ⏻      ·      ·
 ```
 
 **Control keys: other thumb resting in its bottom outer corner** (left
 thumb SW for the right pad, right thumb SE for the left pad). The right pad
 is a nav cluster: the arrows by direction, with Home / PgUp / End / PgDn in
-the corners. The left pad puts Esc top left, as on a keyboard, play/pause
-top center, tracks either side, and the volume keys along the bottom row:
+the corners. The left pad puts play/pause top center,
+tracks either side, and the volume keys along the bottom row:
 
 ```
    left pad            right pad
-   Esc   Play  ·       Home  ▲  PgUp
+   ·     Play  ·       Home  ▲  PgUp
    Prev  ·     Next    ◀     ·  ▶
    Mute  Vol−  Vol+    End   ▼  PgDn
 ```
 
-The buttons stay the gamepad's outside the keyboard, so these keys live
-here rather than on the d-pad and face buttons.
+The d-pad stays the gamepad's outside the keyboard, so these keys live
+here rather than on it.
 
 **Still open:** whether you want the vowels on the right thumb instead.
 
