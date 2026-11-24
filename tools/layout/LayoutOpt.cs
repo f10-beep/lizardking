@@ -3,30 +3,32 @@
 // KEYMAP: it reads them straight from the firmware source.
 //
 // A letter sits in a slot: a pad, a page (the zone the other thumb rests in)
-// and one of the pad's 8 outer zones. The search uses the pages the shipped
-// layout puts letters on, each pad its own. --fixed keeps the home page's
-// letters where they are and searches only the others. A layout is scored on
-// English letter bigrams:
+// and one of the pad's 8 rim zones. The search uses the pages the shipped
+// layout puts letters on, each pad its own: home (the other thumb in its top
+// inner corner) and one more. Each page keeps as many letters as it has
+// now, so the punctuation keeps its slots. --fixed keeps the home page's
+// letters where they are and searches only the others. A layout is scored
+// on English letter bigrams:
 //
 // - After a letter, the clicking thumb stays on its zone and the other thumb
 //   stays on the page zone it was holding.
 // - The next letter needs its own thumb on its zone and the other thumb on
 //   its page; both thumbs move at once, so a step costs the larger of the two
 //   moves.
-// - A move costs effort per zone crossed, by direction: --up, --down, --out
-//   (toward the hand, away from the controller's center) and --in (toward
-//   the center). A diagonal combines its two parts like a distance.
+// - A thumb that stays put costs nothing. One that moves pays for landing on
+//   its zone, by how hard the zone is to find blind (LAND_RANK), from 1 for
+//   the top inner corner to 1 + --spread for the outer side, plus --travel
+//   per zone of distance covered.
 // - Using the same thumb twice in a row costs --same extra (release,
 //   re-press); alternating thumbs overlap.
 // - A letter off the home page costs --page extra (holding the other thumb
-//   off center).
+//   off home).
 //
 // Build: tools/layout/build.cmd (the .NET Framework's own csc). Run from the
 // repository root:
 //   build\layout\LayoutOpt.exe [count_2l.txt] [--keymap file] [--fixed]
-//     [--seeds 6]
-//     [--iters 150000] [--same 1.0] [--page 0.3]
-//     [--up 1.0] [--down 1.8] [--out 1.2] [--in 1.4]
+//     [--seeds 6] [--iters 150000] [--same 1.0] [--page 0.3]
+//     [--spread 1.0] [--travel 0.25]
 // count_2l.txt ("xy count" lines, https://norvig.com/ngrams/count_2l.txt)
 // defaults to build\layout\count_2l.txt.
 
@@ -55,6 +57,13 @@ static class LayoutOpt
 			{ "NW", new[] { -1, 1 } },
 		};
 
+	// How hard each zone is for the right thumb to find blind, easiest
+	// first: top inner corner, top side, top outer corner, inner side,
+	// bottom inner corner, bottom side, bottom outer corner, outer side,
+	// center (docs/DESIGN.md). The left thumb's is the mirror image.
+	static readonly string[] LAND_RANK = { "NW", "N", "NE", "W", "SW",
+					       "S", "SE", "E", "C" };
+
 	struct Slot
 	{
 		public int Pad;
@@ -63,18 +72,29 @@ static class LayoutOpt
 
 	static readonly List<Slot> Slots = new List<Slot>();
 	static double[,] cost;
-	static double up = 1.0, down = 1.8, outward = 1.2, inward = 1.4;
+	static double spread = 1.0, travel = 0.25;
 
-	// effort for a thumb on this pad to move between two zones
+	static string Mirror(string z)
+	{
+		return z.Replace('E', 'x').Replace('W', 'E').Replace('x', 'W');
+	}
+
+	// the home page: the other thumb in its top inner corner
+	static string Home(int pad)
+	{
+		return pad == PadR ? "NE" : "NW";
+	}
+
+	// effort for the thumb on this pad to go from zone a to zone b
 	static double Effort(int pad, string a, string b)
 	{
+		if (a == b)
+			return 0;
+		int rank = Array.IndexOf(LAND_RANK, pad == PadR ? b : Mirror(b));
 		int[] p = Pos[a], q = Pos[b];
 		int dx = q[0] - p[0], dy = q[1] - p[1];
-		// the right thumb's hand is to the right, the left's to the left
-		bool outw = pad == PadR ? dx > 0 : dx < 0;
-		double ex = Math.Abs(dx) * (outw ? outward : inward);
-		double ey = Math.Abs(dy) * (dy > 0 ? up : down);
-		return Math.Sqrt(ex * ex + ey * ey);
+		return 1 + spread * rank / (LAND_RANK.Length - 2) +
+		       travel * Math.Sqrt(dx * dx + dy * dy);
 	}
 
 	// cost of typing slot b right after slot a
@@ -86,7 +106,7 @@ static class LayoutOpt
 		double move = Math.Max(Effort(b.Pad, at[b.Pad], b.Zone),
 				       Effort(1 - b.Pad, at[1 - b.Pad], b.Page));
 		return move + (a.Pad == b.Pad ? same : 0) +
-		       (b.Page != "C" ? page : 0);
+		       (b.Page != Home(b.Pad) ? page : 0);
 	}
 
 	// bigram -> share of all bigrams, letters a..z as 0..25
@@ -160,13 +180,15 @@ static class LayoutOpt
 	}
 
 	// Moves the letters in movable among the slots in allowed; the others
-	// stay where start has them.
+	// stay where start has them. A letter moves to an empty slot only on its
+	// own page, so each page keeps its number of letters.
 	static double Anneal(Dictionary<int, double> big, int iters, Random rng,
 			     int[] start, int[] movable, int[] allowed,
 			     out int[] bestMap)
 	{
 		int n = Slots.Count;
-		var shuffled = allowed.OrderBy(x => rng.Next()).ToArray();
+		var shuffled = movable.Select(c => start[c])
+				       .OrderBy(x => rng.Next()).ToArray();
 		var slotOf = (int[])start.Clone();
 		var occupant = Enumerable.Repeat(-1, n).ToArray();
 		for (int i = 0; i < movable.Length; i++)
@@ -204,6 +226,9 @@ static class LayoutOpt
 			if (s1 == s2)
 				continue;
 			int d = occupant[s2];
+			if (d < 0 && (Slots[s1].Pad != Slots[s2].Pad ||
+				      Slots[s1].Page != Slots[s2].Page))
+				continue;
 			double before = local(c, d);
 			slotOf[c] = s2;
 			if (d >= 0)
@@ -238,7 +263,7 @@ static class LayoutOpt
 		var sb = new StringBuilder();
 		for (int k = 0; k < pages[PadL].Count; k++) {
 			string pl = pages[PadL][k], pr = pages[PadR][k];
-			sb.AppendLine(pl == "C" ? "  other thumb center:" :
+			sb.AppendLine(pl == Home(PadL) ? "  home:" :
 				      "  right thumb in " + pl + " (L), left thumb in " +
 					      pr + " (R):");
 			foreach (var row in grid) {
@@ -291,10 +316,8 @@ static class LayoutOpt
 			case "--iters": iters = int.Parse(v, inv); break;
 			case "--same": same = double.Parse(v, inv); break;
 			case "--page": page = double.Parse(v, inv); break;
-			case "--up": up = double.Parse(v, inv); break;
-			case "--down": down = double.Parse(v, inv); break;
-			case "--out": outward = double.Parse(v, inv); break;
-			case "--in": inward = double.Parse(v, inv); break;
+			case "--spread": spread = double.Parse(v, inv); break;
+			case "--travel": travel = double.Parse(v, inv); break;
 			default:
 				Console.Error.WriteLine("unknown option " + args[i - 1]);
 				return 2;
@@ -307,8 +330,9 @@ static class LayoutOpt
 		foreach (int pad in new[] { PadR, PadL }) {
 			pages[pad] = shipped.Values.Where(v => v[0] == pad)
 					     .Select(v => Zones[v[1]]).Distinct()
-					     .OrderBy(z => z == "C" ? 0 : 1).ToList();
-			if (pages[pad][0] != "C" || pages[pad].Count != 2)
+					     .OrderBy(z => z == Home(pad) ? 0 : 1)
+					     .ToList();
+			if (pages[pad][0] != Home(pad) || pages[pad].Count != 2)
 				throw new InvalidDataException(
 					"each pad needs letters on its home page and one other");
 			foreach (string pg in pages[pad])
@@ -333,10 +357,13 @@ static class LayoutOpt
 				  Show(shippedMap, pages));
 
 		var movable = Enumerable.Range(0, 26)
-				      .Where(c => !fix || Slots[shippedMap[c]].Page != "C")
+				      .Where(c => !fix || Slots[shippedMap[c]].Page !=
+							  Home(Slots[shippedMap[c]].Pad))
 				      .ToArray();
 		var allowed = Enumerable.Range(0, Slots.Count)
-				      .Where(x => !fix || Slots[x].Page != "C").ToArray();
+				      .Where(x => !fix ||
+					  Slots[x].Page != Home(Slots[x].Pad))
+			      .ToArray();
 		var results = new List<Tuple<double, int[]>>();
 		for (int seed = 0; seed < seeds; seed++) {
 			int[] map;

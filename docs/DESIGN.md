@@ -191,35 +191,35 @@ can be held with the left hand while a thumb lifts to drive the cursor.
 
 - Active while both thumbs touch the pads. Entering plays a dull tone on
   both pads (−12 dB); leaving plays a softer one (−18 dB).
-- Each pad is a 3×3 grid of equal thirds. A thumb has to go 1,300 pad
-  counts past a zone's edge to leave it, so it doesn't flicker on borders.
-  - **Center:** inert. No key, no click pulse, no texture.
-  - **Side zones (N/E/S/W):** a texture tick (−24 dB) per 2,500 counts
-    of travel.
+- A pad's keys are the 8 places along its rim, found blind. A thumb finds
+  a corner by pressing into it, because two walls stop it there. It lands
+  on a side directly, since the side is long along the rim, or slides
+  along the rim from a corner to the bump. The center has no wall on
+  either axis to find it by, so it holds no key and only the rarest page.
+  - Zones are angles from the pad's center: each corner is a 30° window on
+    its diagonal, each side the 60° between. Closer in than 12,000 pad
+    counts (on the larger axis) is the inert center: no key, no pulse.
+  - A thumb has to go 1,300 pad counts past a border to leave a zone, so
+    it doesn't flicker on borders.
   - **Every zone change:** a bump (−12 dB), felt at the actual hysteresis
-    switch point.
-  - **Outer edge:** the same bump on entering a band 26,000 counts from
-    center, because the sensor can lose a thumb still on the pad.
-  - **Corners:** no texture.
-- Sliding with a click held:
-  - **Center to an outer zone:** types that zone's key.
-  - **Held key into the center:** releases the key, with its release pulse.
-  - **Held key into another key zone:** releases the key and types nothing
-    until the thumb returns to the center.
-- Clicking one of a pad's 8 outer zones types the key for that zone
-  combined with the zone the other thumb rests in (8 × 9 per pad, 144 in
-  all). Keys repeat while the click is held, using the OS key repeat.
-- A zone with no key for where the other thumb rests is inert like the
-  center: no pulse and nothing typed, so the thumb feels that nothing is
-  there. It stays dead until the thumb returns to the center.
+    switch point. It is the one cue a sliding thumb counts.
+  - Easiest to find first: the top inner corner, the top side, the top
+    outer corner, the inner side, the bottom inner corner, the bottom
+    side, the bottom outer corner, the outer side, and last the center.
+- A click types the key for its zone combined with the zone the other
+  thumb rests in (8 × 9 per pad, 144 in all). Keys repeat while the click
+  is held, using the OS key repeat. Sliding off the zone releases the key,
+  and nothing more types until the click lifts.
+- A click in the center, or in a zone with no key for where the other
+  thumb rests, is dead: no pulse and nothing typed, so the thumb feels
+  that nothing is there.
 - Layout: `docs/KEYBOARD_LAYOUT.md`. Vowels on the left thumb, consonants
-  on the right; the pages follow a keyboard: numbers with the other thumb
-  resting up, the numpad with it in the top inner corner, F-keys in the top
-  outer corner, the rarer letters with it outward, punctuation in the
-  spare zones of the number and outward pages,
-  navigation and media in the bottom outer corner, the remaining keys
-  with Sleep and Power drawn in and down.
-- The center zones do nothing, alone or together.
+  on the right, E and R on the home corners. Home is the other thumb in its top inner corner, the
+  rarer letters on its top side, and navigation (right pad) and media
+  (left pad) in its top outer corner. The three number pages sit
+  together: numbers on its inner side, F-keys in its bottom inner corner,
+  the numpad in the center. The remaining keys, with Sleep and Power, are
+  in its bottom outer corner, and the bottom and outer sides are free.
 - Key clicks pulse for twice as long as mouse clicks (3,000 / 1,400 µs);
   0x81 has no gain setting.
 - Index fingers (keyboard layer): RT = Space, LT = Backspace

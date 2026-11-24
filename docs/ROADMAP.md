@@ -31,7 +31,9 @@ Launch feature (in the first release): gyro aiming.
   gave stronger flicks but slightly weaker lift-off protection; retune.
 - **Scroll momentum.** Tune the fling threshold and the coast by feel.
 - **Clicks.** Keep lowering the click threshold until it misfires.
-- **Keyboard.** Tune zones and texture.
+- **Keyboard.** Try the rim layout by feel and settle it: the pages, the
+  letters the search placed, where the punctuation goes (unscored), the
+  corner width and the center. Then flash it.
 - **The Guide saying why it can't draw.** When its windows can't get the
   GPU (an odd driver, composition refused) they stay blank and retry every
   2 s with no sign of it. Put the reason in the tray tooltip and menu, so

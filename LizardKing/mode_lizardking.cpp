@@ -156,19 +156,20 @@ static int LK_KBD_DUR = 30;
 static float LK_TICK_PX = 24.0f;
 #define LK_TICK_MIN_MS 12u
 
-// Keyboard layer: each pad is a 3x3 grid of equal thirds. A zone is left
-// only once the thumb is ZONE_HYST past its edge, so a thumb resting on a
-// border does not flicker between zones. Side (N/E/S/W) zones have a texture
-// tick per TEX_COUNTS of travel; corners and the center have none.
-#define LK_ZONE_EDGE 10923
+// Keyboard layer: a pad's keys are the 8 places along its rim, found blind:
+// a corner by pressing into it (two walls stop the thumb), a side by sliding
+// along the rim from a corner to the bump. So zones are angles: each corner a
+// narrow CORNER_DEG window on its diagonal, the sides the wide windows
+// between. Closer in than CENTER (pad counts, on the larger axis) is inert,
+// since the center has no wall to find it by. A zone is left only once the
+// thumb is ZONE_HYST counts past its border, so a thumb resting on one does
+// not flicker between zones.
+static int LK_CORNER_DEG = 30;
+static int LK_CENTER = 12000;
 static int LK_ZONE_HYST = 1300;
-static int LK_TEX_COUNTS = 2500;
-static int LK_TEX_DB = -24;
-// a bump on every zone change, and on entering the band along the pad's
-// outer edge (the sensor can lose a thumb that is still on the pad)
+// a bump on every zone change: what a sliding thumb counts
 static int LK_BUMP_DB = -12;
 static int LK_BUMP_DUR = 20;
-#define LK_PAD_EDGE 26000
 // triggers act as keys in the keyboard layer at a light pull (0..255)
 static int LK_TRIG_ON = 24;
 static int LK_TRIG_OFF = 12;
@@ -406,14 +407,11 @@ struct Pad {
 	bool on; // touched last report
 	bool click;
 	int16_t x, y;
-	uint8_t bx, by; // keyboard zone column / row band, 0..2
-	float tex; // pad travel since the last texture tick
 	uint8_t kst; // KS_* typing state of this pad's click
 	uint8_t key; // HID key held, 0 = none
 	uint8_t keyZone; // zone the held key was typed in
 	uint32_t keyMs; // when the held key was typed
 	uint8_t zone; // zone last report
-	bool edge; // in the outer edge band
 };
 
 struct GamepadOut {
@@ -425,10 +423,11 @@ struct GamepadOut {
 enum { PAD_R, PAD_L };
 static const uint32_t CLICK_BIT[2] = { TB_RPADC, TB_LPADC };
 static const uint32_t TRIG_BIT[2] = { TB_R2, TB_L2 };
-// A click in the center is armed: sliding out types the zone it enters. A
-// held key ends when the thumb leaves its zone; sliding straight into another
-// key zone types nothing (dead) until the thumb returns to the center.
-enum { KS_IDLE, KS_CENTER, KS_KEY, KS_DEAD };
+// A keyboard click types on the press, and its key ends when the thumb leaves
+// the zone. A click with no key (the center, or a zone with none for where
+// the other thumb rests) is dead: no pulse, so the thumb feels that nothing
+// is there, and nothing until the click lifts.
+enum { KS_IDLE, KS_KEY, KS_DEAD };
 enum { AN_LT, AN_RT, AN_LSTICK, AN_RSTICK, AN_N };
 enum { AN_FREE, AN_OWNED, AN_BLOCKED };
 
@@ -599,115 +598,118 @@ static bool holdKey(uint8_t key)
 }
 #define K(k) HID_KEY_##k
 static const uint8_t KEYMAP[2][Z_COUNT][8] = {
-	// PAD_R clicked; ring N NE E SE S SW W NW
+	// PAD_R clicked; ring N NE E SE S SW W NW. The letters and controls
+	// take the spots the resting thumb finds most easily (top inner
+	// corner, top side, top outer corner); the three number pages sit
+	// together on the inner side, the bottom inner corner and the center.
 	{
-		// left thumb NW: F6..F10 where 6..0 are, F12 on top
-		{ K(F12), 0, K(F10), K(F9), K(F8), K(F7), K(F6), 0 },
-		// left thumb N: the number row. Its punctuation along the top,
-		// ] - = as on a keyboard after 0, ] mirroring [; the digits
-		// in a U below, 6 on the inner side round to 0 on the outer,
-		// each a zone from the next (see the left pad's N page)
-		{ K(MINUS), K(EQUAL), K(0), K(9), K(8), K(7), K(6),
-		  K(BRACKET_RIGHT) },
-		// left thumb NE: the numpad's 6..0 where 6..0 are. The top
-		// rows run / * - + . Enter across both pads, as a numpad's
-		// operators top it.
-		{ K(KEYPAD_DECIMAL), K(KEYPAD_ENTER), K(KEYPAD_0), K(KEYPAD_9),
-		  K(KEYPAD_8), K(KEYPAD_7), K(KEYPAD_6), K(KEYPAD_ADD) },
-		// left thumb W: the rarer letters, placed by the layout search
-		// with the home page fixed (docs/KEYBOARD_LAYOUT.md)
-		{ K(D), K(W), K(T), K(P), K(M), K(J), K(V), K(Z) },
-		// left thumb center
-		{ K(N), K(C), K(S), K(F), K(R), K(B), K(L), K(G) },
-		// left thumb E: free, and beside Power
-		{},
-		// left thumb SW: the arrows by direction, the page and line
+		// left thumb NW: the arrows by direction, the page and line
 		// ends in the corners as on a keyboard's nav cluster
 		{ K(ARROW_UP), K(PAGE_UP), K(ARROW_RIGHT), K(PAGE_DOWN),
 		  K(ARROW_DOWN), K(END), K(ARROW_LEFT), K(HOME) },
+		// left thumb N: the rarer letters. The letters of both pads are
+		// placed by the layout search (docs/KEYBOARD_LAYOUT.md): a
+		// thumb's zone is also the other pad's page, so E and R on the
+		// home corners make ER and RE free with both thumbs home, as I
+		// and N on the top sides make IN and NI, and T leaves the right
+		// thumb on the page H needs.
+		{ K(N), K(C), K(Q), K(Z), K(J), K(V), K(M), K(L) },
+		// left thumb NE: home
+		{ K(T), K(S), K(W), K(X), K(B), K(F), K(D), K(R) },
+		// left thumb W: free, and beside Power
+		{},
+		// left thumb center: the numpad's 6..0 where 6..0 are. The
+		// bottom rows run / * - + . Enter across both pads, the
+		// operators under the digits.
+		{ K(KEYPAD_8), K(KEYPAD_9), K(KEYPAD_0), K(KEYPAD_ENTER),
+		  K(KEYPAD_DECIMAL), K(KEYPAD_ADD), K(KEYPAD_6), K(KEYPAD_7) },
+		// left thumb E: the number row. The digits in an arch over the
+		// top, where the thumb reaches most easily: 6 on the inner side
+		// round to 0 on the outer, each a zone from the next (see the
+		// left pad's W page). Its punctuation along the bottom, ] - = as
+		// on a keyboard after 0, ] mirroring [.
+		{ K(8), K(9), K(0), K(EQUAL), K(MINUS), K(BRACKET_RIGHT), K(6),
+		  K(7) },
+		// left thumb SW: keys that aren't F-keys or typing, on the
+		// corner hardest to reach. The top row is a keyboard's Print
+		// Screen, Scroll Lock, Pause; the AI key on the inner side,
+		// mirroring Caps Lock. Power on SE, the right thumb's own
+		// hardest corner, with every key two zones from it, and the
+		// pages beside this one leave SE empty, so reaching Power by
+		// mistake takes more than one misstep.
+		{ K(SCROLL_LOCK), K(PAUSE), 0, KM_POWER, 0, 0, KM_COPILOT,
+		  K(PRINT_SCREEN) },
 		// left thumb S: free, and beside Power
 		{},
-		// left thumb SE: keys that aren't F-keys or typing, on a corner
-		// page the resting thumb finds blind. The top row is a
-		// keyboard's Print Screen, Scroll Lock, Pause; the AI key on the
-		// outer edge, mirroring Caps Lock. Power on SW (see the left
-		// pad's SW page) with every key two zones from it, and the pages
-		// beside this one leave SW empty, so reaching Power by mistake
-		// takes more than one misstep.
-		{ K(SCROLL_LOCK), K(PAUSE), KM_COPILOT, 0, 0, KM_POWER, 0,
-		  K(PRINT_SCREEN) },
+		// left thumb SE: F6..F10 where 6..0 are, F12 below
+		{ K(F8), K(F9), K(F10), 0, K(F12), 0, K(F6), K(F7) },
 	},
 	// PAD_L clicked
 	{
-		// right thumb NW: the numpad's 1..5 where 1..5 are, / * - on
-		// top (see the right pad's NE page)
-		{ K(KEYPAD_MULTIPLY), K(KEYPAD_SUBTRACT), K(KEYPAD_5),
-		  K(KEYPAD_4), K(KEYPAD_3), K(KEYPAD_2), K(KEYPAD_1),
-		  K(KEYPAD_DIVIDE) },
-		// right thumb N: the number row. ` in the corner as on a
-		// keyboard, [ across from it; 1 on the outer side round to 5 on
-		// the inner, so 5 and 6 face each other across the pads
-		{ 0, K(BRACKET_LEFT), K(5), K(4), K(3), K(2), K(1), K(GRAVE) },
-		// right thumb NE: F1..F5 where 1..5 are, F11 on top
-		{ K(F11), 0, K(F5), K(F4), K(F3), K(F2), K(F1), 0 },
-		// right thumb W: free, and beside Sleep
-		{},
-		// right thumb center
-		{ K(O), K(PERIOD), K(U), K(COMMA), K(I), K(A), K(E), K(Y) },
-		// right thumb E: the rarer letters (see the right pad's W page),
-		// and the rest of the punctuation in the zones they leave
-		{ K(SEMICOLON), K(APOSTROPHE), K(Q), K(SLASH), K(K), K(X), K(H),
-		  K(BACKSLASH) },
-		// right thumb SW: the rest of the keys that aren't F-keys or
-		// typing (see the right pad's SE page). Num Lock mirrors Scroll
-		// Lock, Insert Print Screen; Caps Lock on the outer edge as on a
-		// keyboard. Sleep on SE: thumbs drawn in and down, each zone is
-		// the other's page, as with T and H; every key is two zones from
-		// it, and the pages beside this one leave SE empty.
-		{ K(NUM_LOCK), K(INSERT), 0, KM_SLEEP, 0, 0, K(CAPS_LOCK), 0 },
-		// right thumb S: free, and beside Sleep
-		{},
-		// right thumb SE: play/pause top center; volume along the
-		// bottom, mute in the corner
+		// right thumb NW: home
+		{ K(A), K(E), K(O), K(Y), K(PERIOD), K(COMMA), K(K), K(U) },
+		// right thumb N: the rarer letters (see the right pad's N page),
+		// and the rest of the punctuation in the zones they leave: ; '
+		// side by side and \ above /, as on a keyboard
+		{ K(I), K(H), K(P), K(APOSTROPHE), K(SEMICOLON), K(SLASH),
+		  K(BACKSLASH), K(G) },
+		// right thumb NE: play/pause top center, tracks either side,
+		// the volume keys along the bottom row
 		{ KM_PLAY, 0, KM_NEXT, KM_VOL_UP, KM_VOL_DOWN, KM_MUTE, KM_PREV,
 		  0 },
+		// right thumb W: the number row. 1 on the outer side round the
+		// top to 5 on the inner, so 5 and 6 face each other across the
+		// pads; ` in the corner below 1, as on a keyboard before it, [
+		// across from it
+		{ K(3), K(4), K(5), K(BRACKET_LEFT), 0, K(GRAVE), K(1), K(2) },
+		// right thumb center: the numpad's 1..5 where 1..5 are, / * -
+		// below (see the right pad's center page)
+		{ K(KEYPAD_3), K(KEYPAD_4), K(KEYPAD_5), K(KEYPAD_SUBTRACT),
+		  K(KEYPAD_MULTIPLY), K(KEYPAD_DIVIDE), K(KEYPAD_1),
+		  K(KEYPAD_2) },
+		// right thumb E: free, and beside Sleep
+		{},
+		// right thumb SW: F1..F5 where 1..5 are, F11 below
+		{ K(F3), K(F4), K(F5), 0, K(F11), 0, K(F1), K(F2) },
+		// right thumb S: free, and beside Sleep
+		{},
+		// right thumb SE: the rest of the keys that aren't F-keys or
+		// typing (see the right pad's SW page). Num Lock mirrors Scroll
+		// Lock, Insert Print Screen, Caps Lock the AI key. Sleep on SW,
+		// the left thumb's own hardest corner, every key two zones from
+		// it, and the pages beside this one leave SW empty.
+		{ K(NUM_LOCK), K(INSERT), K(CAPS_LOCK), 0, 0, KM_SLEEP, 0, 0 },
 	},
 };
 #undef K
 // the live key map: KEYMAP until the console changes a page (~K)
 static uint8_t s_keymap[2][Z_COUNT][8];
 
-// one axis of the grid: 0 = low third, 1 = middle, 2 = high
-static uint8_t zoneBand(int v, uint8_t cur)
+// The pad's zone this report, from the zone it was in last report (see
+// LK_CORNER_DEG). Pad y grows upward.
+static uint8_t padZone(const Pad &p, bool touch, int16_t x, int16_t y)
 {
-	int lo = -LK_ZONE_EDGE, hi = LK_ZONE_EDGE;
-	if (cur == 0) {
-		lo += LK_ZONE_HYST;
-	} else if (cur == 2) {
-		hi -= LK_ZONE_HYST;
-	} else {
-		lo -= LK_ZONE_HYST;
-		hi += LK_ZONE_HYST;
-	}
-	return v < lo ? 0 : v > hi ? 2 : 1;
-}
-
-// Update and return the pad's zone. Call before padDelta() for the report.
-static uint8_t padZone(Pad &p, bool touch, int16_t x, int16_t y)
-{
-	if (!touch || !p.on)
-		p.bx = p.by = 1;
+	static const uint8_t CORNER[4] = { Z_NE, Z_NW, Z_SW, Z_SE };
+	static const uint8_t SIDE[4] = { Z_E, Z_N, Z_W, Z_S };
 	if (!touch)
 		return Z_C;
-	p.bx = zoneBand(x, p.bx);
-	p.by = zoneBand(y, p.by);
-	// pad y grows upward
-	return (2 - p.by) * 3 + p.bx;
-}
-
-static bool zoneSide(uint8_t z)
-{
-	return z == Z_N || z == Z_E || z == Z_S || z == Z_W;
+	int reach = max(abs(x), abs(y));
+	if (reach < LK_CENTER + (p.zone == Z_C ? LK_ZONE_HYST : -LK_ZONE_HYST))
+		return Z_C;
+	// quarter turns counterclockwise from E, and degrees off the diagonal
+	float q = atan2f((float)y, (float)x) * (2.0f / (float)M_PI) + 4.0f;
+	float off = fabsf(q - floorf(q) - 0.5f) * 90.0f;
+	// the border's hysteresis as an angle at this reach
+	float slack = LK_ZONE_HYST * (180.0f / (float)M_PI) / reach;
+	float half = LK_CORNER_DEG * 0.5f;
+	if (p.zone == Z_NE || p.zone == Z_NW || p.zone == Z_SW ||
+	    p.zone == Z_SE)
+		half += slack;
+	else if (p.zone != Z_C)
+		half -= slack;
+	if (off < half)
+		return CORNER[(int)q % 4];
+	return SIDE[(int)(q + 0.5f) % 4];
 }
 
 // ---- helpers ----
@@ -1090,29 +1092,8 @@ static void gamepadStep(const PuckInput &in)
 	s_gp.ry = rs ? in.ry : 0;
 }
 
-static void typeKey(int i, uint8_t key, uint8_t z)
-{
-	s_pad[i].kst = KS_KEY;
-	s_pad[i].key = key;
-	s_pad[i].keyZone = z;
-	s_pad[i].keyMs = millis();
-	hapticKey(PULSE_SIDE[i], true);
-}
-
-// A key zone with no key for where the other thumb rests is inert like the
-// center: no pulse, so the thumb feels that nothing is there. It stays dead
-// until the thumb returns to the center.
-static void pressZone(int i, uint8_t key, uint8_t z)
-{
-	if (key)
-		typeKey(i, key, z);
-	else
-		s_pad[i].kst = KS_DEAD;
-}
-
 // Pad clicks: a sharp pulse on each edge. In the keyboard layer a click types
-// the key for its zone and the other thumb's zone; the center zone is inert
-// (no key, no pulse). See KS_*.
+// the key for its zone and the other thumb's zone. See KS_*.
 static void padClicks(uint32_t raw, const uint8_t zone[2])
 {
 	for (int i = 0; i < 2; i++) {
@@ -1132,23 +1113,21 @@ static void padClicks(uint32_t raw, const uint8_t zone[2])
 				pd.key = 0;
 			} else if (!(s_own[LY_KBD] & CLICK_BIT[i])) {
 				hapticClick(PULSE_SIDE[i], true);
-			} else if (pos < 0) {
-				pd.kst = KS_CENTER;
+			} else if (key) {
+				pd.kst = KS_KEY;
+				pd.key = key;
+				pd.keyZone = z;
+				pd.keyMs = millis();
+				hapticKey(PULSE_SIDE[i], true);
 			} else {
-				pressZone(i, key, z);
+				pd.kst = KS_DEAD;
 			}
 			continue;
 		}
-		if (!click)
-			continue;
-		if (pd.kst == KS_CENTER && pos >= 0) {
-			pressZone(i, key, z);
-		} else if (pd.kst == KS_KEY && z != pd.keyZone) {
+		if (click && pd.kst == KS_KEY && z != pd.keyZone) {
 			hapticKey(PULSE_SIDE[i], false);
 			pd.key = 0;
-			pd.kst = pos < 0 ? KS_CENTER : KS_DEAD;
-		} else if (pd.kst == KS_DEAD && pos < 0) {
-			pd.kst = KS_CENTER;
+			pd.kst = KS_DEAD;
 		}
 	}
 }
@@ -1188,33 +1167,16 @@ static void triggerPulses(uint32_t raw)
 	}
 }
 
-// Keyboard texture: a faint tick per stretch of travel through a side zone,
-// and a bump on each zone change and on reaching the pad's outer edge band.
-static void zoneHaptics(const PuckInput &in, const uint8_t zone[2],
-			const bool wasOn[2], const int travel[2])
+// A bump on each zone change in the keyboard layer, felt where the zone
+// actually changes
+static void zoneHaptics(const uint8_t zone[2], const bool wasOn[2])
 {
-	const int16_t px[2] = { in.rpx, in.lpx }, py[2] = { in.rpy, in.lpy };
 	for (int i = 0; i < 2; i++) {
 		Pad &pd = s_pad[i];
-		bool kbd = s_layer == LY_KBD && pd.on;
-		int reach = max(abs(px[i]), abs(py[i]));
-		bool edge = pd.edge ? reach > LK_PAD_EDGE - LK_ZONE_HYST :
-				      reach > LK_PAD_EDGE;
-		bool bump = kbd && wasOn[i] &&
-			    (zone[i] != pd.zone || (edge && !pd.edge));
-		pd.zone = zone[i];
-		pd.edge = pd.on && edge;
-		if (bump)
+		if (s_layer == LY_KBD && pd.on && wasOn[i] &&
+		    zone[i] != pd.zone)
 			hapticTone(TONE_SIDE[i], LK_BUMP_DB, LK_BUMP_DUR);
-		if (!kbd || !zoneSide(zone[i])) {
-			pd.tex = 0;
-			continue;
-		}
-		pd.tex += travel[i];
-		if (pd.tex >= LK_TEX_COUNTS) {
-			pd.tex = 0;
-			hapticTone(TONE_SIDE[i], LK_TEX_DB, LK_TICK_DUR);
-		}
+		pd.zone = zone[i];
 	}
 }
 
@@ -1808,12 +1770,11 @@ static void lkProcess(const PuckInput &in)
 	int rdx, rdy, ldx, ldy;
 	padDelta(s_pad[PAD_R], rTouch, in.rpx, in.rpy, &rdx, &rdy);
 	padDelta(s_pad[PAD_L], lTouch, in.lpx, in.lpy, &ldx, &ldy);
-	const int travel[2] = { abs(rdx) + abs(rdy), abs(ldx) + abs(ldy) };
 
 	padClicks(raw, zone);
 	holdGuard(raw, zone);
 	triggerPulses(raw);
-	zoneHaptics(in, zone, wasOn, travel);
+	zoneHaptics(zone, wasOn);
 	streamState(zone);
 	keyboardStep();
 	mediaStep();
@@ -1987,8 +1948,8 @@ static const struct {
 	TUNE_I(LK_TONE_HZ),	    TUNE_I(LK_TICK_DB),
 	TUNE_I(LK_TICK_DUR),	    TUNE_I(LK_KBD_ON_DB),
 	TUNE_I(LK_KBD_OFF_DB),	    TUNE_I(LK_KBD_DUR),
-	TUNE_I(LK_ZONE_HYST),	    TUNE_I(LK_TEX_COUNTS),
-	TUNE_I(LK_TEX_DB),	    TUNE_I(LK_BUMP_DB),
+	TUNE_I(LK_CORNER_DEG),	    TUNE_I(LK_CENTER),
+	TUNE_I(LK_ZONE_HYST),	    TUNE_I(LK_BUMP_DB),
 	TUNE_I(LK_BUMP_DUR),	    TUNE_I(LK_TRIG_ON),
 	TUNE_I(LK_TRIG_OFF),	    TUNE_F(LK_FOLLOW_SLOW),
 	TUNE_F(LK_FOLLOW_FAST),	    TUNE_F(LK_FOLLOW_MIN),
