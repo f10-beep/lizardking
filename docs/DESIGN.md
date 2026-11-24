@@ -104,7 +104,9 @@ Two layers, and every hand position means one thing:
 
 - **The pads are always the mouse** outside the keyboard: the right pad
   moves the pointer, with the gyro (see Gyro aiming), and its click is the
-  left button; the left pad scrolls and its click is the right button.
+  left button; the left pad scrolls and its click is the middle button.
+  Right click is QAM, between the pads, so the right thumb reaches both
+  main buttons.
 - **The buttons are always the gamepad's** outside the keyboard, so a
   button never changes meaning mid-game.
 - **Both pads: keyboard.** The back buttons become the modifiers, the
@@ -134,11 +136,11 @@ Two layers, and every hand position means one thing:
 | LT / RT | LT / RT | Backspace / Space (a light pull) |
 | View / Menu | Start / Back | — |
 | Steam | the Guide button (see above) | chords only |
-| QAM | middle click (M3) | — |
+| QAM | right click (M2) | — |
 | Right pad | pointer, with gyro | types |
 | Right pad click | left click (M1) | types |
 | Left pad | scroll | types |
-| Left pad click | right click (M2) | types |
+| Left pad click | middle click (M3) | types |
 
 Esc, the arrows, the page keys and the media keys are key map keys (see
 Keyboard layer), so the buttons stay the gamepad's.

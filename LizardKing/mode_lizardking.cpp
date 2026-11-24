@@ -1610,10 +1610,11 @@ static void mouseStep(const PuckInput &in, uint8_t touchLayer, int rdx, int rdy,
 	if (s_own[LY_CTRL] & TB_RPADC)
 		mbtn |= MOUSE_BUTTON_LEFT;
 	if (s_own[LY_CTRL] & TB_LPADC)
-		mbtn |= MOUSE_BUTTON_RIGHT;
-	// QAM, between the pads, is the middle button
-	if (s_own[LY_CTRL] & TB_QAM)
 		mbtn |= MOUSE_BUTTON_MIDDLE;
+	// QAM, between the pads, puts right click in reach of the thumb that
+	// drives the pointer
+	if (s_own[LY_CTRL] & TB_QAM)
+		mbtn |= MOUSE_BUTTON_RIGHT;
 	for (const auto &pd : s_pad) {
 		if (pd.key == KM_M4)
 			mbtn |= MOUSE_BUTTON_BACKWARD;

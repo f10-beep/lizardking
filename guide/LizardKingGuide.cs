@@ -1914,7 +1914,7 @@ namespace LizardKing
 							LineAlignment = StringAlignment.Center,
 						};
 						// the word, and the mouse button its click is
-						g.DrawString(i == 0 ? "scroll\nM2" : "pointer\nM1",
+						g.DrawString(i == 0 ? "scroll\nM3" : "pointer\nM1",
 							     padFont, inkB,
 							     new RectangleF(-156, -80, 312, 160), sf);
 					}
@@ -2022,7 +2022,7 @@ namespace LizardKing
 				{ "rt", "RT" }, { "rb", "RB" }, { "face", "Y|X|B|A" },
 				{ "rs", "Stick · R3" }, { "r4", "A" }, { "r5", "X" },
 				{ "back", "Back" }, { "xbox", "Guide" },
-				{ "start", "Start" }, { "qam", "M3" },
+				{ "start", "Start" }, { "qam", "M2" },
 			},
 			// with both thumbs on the pads the d-pad, face and center
 			// buttons are out of reach, so they have no keys
