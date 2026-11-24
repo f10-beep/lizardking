@@ -32,6 +32,19 @@ Launch feature (in the first release): gyro aiming.
 - **Scroll momentum.** Tune the fling threshold and the coast by feel.
 - **Clicks.** Keep lowering the click threshold until it misfires.
 - **Keyboard.** Tune zones and texture.
+- **The Guide saying why it can't draw.** When its windows can't get the
+  GPU (an odd driver, composition refused) they stay blank and retry every
+  2 s with no sign of it. Put the reason in the tray tooltip and menu, so
+  a report says what failed.
+- **The Guide's drawing on another PC.** Its windows reach the screen
+  through DirectComposition at the realtime GPU class (docs/DESIGN.md,
+  LizardKing Guide), measured so far on one AMD integrated GPU, Windows
+  11 build 26300 (Insider) and Elite behind Firefox; there, a token with
+  no privileges at all is granted realtime. On the next PC (NVIDIA or
+  Intel, a release Windows build) re-run `make bench`, pick a game to
+  test over, and measure the game with the Guide open over it, which
+  uploads its whole picture about 60 times a second while the controller
+  moves.
 - **Keeping a tuned key map or constant through a reboot.** The console
   already changes both live (`~K`, `~T`); saving them to the puck's flash
   would let an owner keep a customization. Likely a popular request once

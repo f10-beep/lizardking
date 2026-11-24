@@ -9,4 +9,4 @@ if not exist "%OUT%" mkdir "%OUT%"
 "%CSC%" /nologo /target:winexe /optimize+ /platform:anycpu ^
 	/out:"%OUT%\LizardKingGuide.exe" ^
 	/r:System.Windows.Forms.dll /r:System.Drawing.dll ^
-	"%~dp0LizardKingGuide.cs"
+	"%~dp0LizardKingGuide.cs" "%~dp0Gpu.cs"

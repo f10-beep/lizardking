@@ -64,7 +64,7 @@ UF2_RELEASE = $(OUTPUT_DIR)/$(SKETCH).uf2
 UF2_DEV = $(OUTPUT_DIR)/$(SKETCH)-dev.uf2
 
 .PHONY: need-clang-format format format-check check build guide-header \
-	flash deploy keymap tune
+	flash deploy keymap tune bench
 
 need-clang-format:
 	@[ -n "$(CLANG_FORMAT)" ] || { echo "clang-format 18 not found"; exit 1; }
@@ -85,12 +85,24 @@ ifeq ($(LIZARD_DRIVE)$(OS),1Windows_NT)
 	"$(CSC)" -nologo -target:winexe -optimize+ \
 		'-out:build\guide\LizardKingGuide.exe' \
 		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
-		'guide\LizardKingGuide.cs'
+		'guide\LizardKingGuide.cs' 'guide\Gpu.cs'
 	cd build/guide && xxd -i LizardKingGuide.exe > guide_exe.h.tmp
 	sed -e 's/^unsigned/static const unsigned/' build/guide/guide_exe.h.tmp > $(GUIDE_H)
 else
 	rm -f $(GUIDE_H)
 endif
+
+# The Guide's windows on this PC, with no puck and no one typing: an overlay
+# shows at its opacity and lets clicks through, and how fast the key map
+# reaches the screen. Run it with what was slow in front (a game behind a
+# browser, say); the key map shows for about 25 s.
+bench:
+	mkdir -p build/bench
+	"$(CSC)" -nologo -target:exe -optimize+ -main:LizardKing.Bench \
+		'-out:build\bench\Bench.exe' \
+		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
+		'guide\LizardKingGuide.cs' 'guide\Gpu.cs' 'tools\bench\Bench.cs'
+	build/bench/Bench.exe 20
 
 build: guide-header
 	./gen_version.sh

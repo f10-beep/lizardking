@@ -21,8 +21,8 @@
 //
 // It reads the puck's serial port. The key table comes from the firmware
 // ("~m" -> "KM" lines), so it always matches the flashed layout. "KS" lines
-// report the layer, both thumbs' zones and Shift; "KK pad zone" arrives for
-// every typed key; "KT" carries the status and the key map switches, which
+// report the layer, both thumbs' zones and Shift; "KT" carries the status
+// and the key map switches, which
 // the puck owns; "KG" turns the Guide on or off; "KI" (Guide + Start) asks
 // to install.
 //
@@ -30,7 +30,8 @@
 // itself to a temporary folder and runs from there until the user asks to
 // install (Guide + Start).
 //
-// Build: tools/guide/build.cmd. --demo cycles fake states without a puck.
+// Build: guide/build.cmd (with Gpu.cs). --demo cycles fake states without
+// a puck.
 
 using System;
 using System.Collections.Generic;
@@ -139,17 +140,22 @@ namespace LizardKing
 		static readonly Dictionary<IntPtr, bool> puck =
 			new Dictionary<IntPtr, bool>();
 
-		public static void Register(IntPtr window)
+		// Only while the Guide is up, the one time a dismiss matters:
+		// whenever the app in front doesn't take raw input itself (a
+		// browser, unlike a game), every mouse report would otherwise
+		// wake this window.
+		public static void Listen(IntPtr window, bool on)
 		{
 			var d = new Native.RawInputDevice[2];
-			// keyboards and mice; INPUTSINK: even while unfocused
+			// keyboards and mice; INPUTSINK (0x100): even while
+			// unfocused; REMOVE (1) takes no window
 			d[0].UsagePage = 1;
 			d[0].Usage = 6;
 			d[1].UsagePage = 1;
 			d[1].Usage = 2;
 			for (int i = 0; i < 2; i++) {
-				d[i].Flags = 0x100;
-				d[i].Target = window;
+				d[i].Flags = on ? 0x100u : 1u;
+				d[i].Target = on ? window : IntPtr.Zero;
 			}
 			Native.RegisterRawInputDevices(d, 2,
 				(uint)Marshal.SizeOf(typeof(Native.RawInputDevice)));
@@ -225,7 +231,6 @@ namespace LizardKing
 		public const uint LPadT = 0x2000000, LPadC = 0x4000000;
 		public const uint LT = 0x8000000;
 		public const uint Dpad = Up | Down | Left | Right;
-		public const uint Face = A | B | X | Y;
 	}
 
 	static class Hid
@@ -345,8 +350,6 @@ namespace LizardKing
 		[DllImport("kernel32.dll", SetLastError = true)]
 		public static extern bool EscapeCommFunction(SafeFileHandle h,
 							     uint func);
-		[DllImport("winmm.dll")]
-		public static extern uint timeBeginPeriod(uint ms);
 		[DllImport("shcore.dll")]
 		public static extern int SetProcessDpiAwareness(int value);
 		[DllImport("user32.dll")]
@@ -421,32 +424,6 @@ namespace LizardKing
 			public int Left, Top, Right, Bottom;
 		}
 
-		[DllImport("user32.dll")]
-		public static extern IntPtr GetForegroundWindow();
-		[DllImport("user32.dll")]
-		public static extern bool GetWindowRect(IntPtr window, out Rect r);
-		[DllImport("user32.dll", CharSet = CharSet.Unicode)]
-		public static extern int GetClassName(IntPtr window, StringBuilder name,
-						      int max);
-
-		// Whether a game is most likely in front: the foreground window
-		// fills its monitor, exclusive or borderless fullscreen, and isn't
-		// the desktop (Progman, or WorkerW behind the icons). The Guide and
-		// key map then go lean (see GuideWindow.Lean).
-		public static bool FullscreenInFront()
-		{
-			IntPtr w = GetForegroundWindow();
-			Rect r;
-			if (w == IntPtr.Zero || !GetWindowRect(w, out r))
-				return false;
-			var name = new StringBuilder(32);
-			GetClassName(w, name, name.Capacity);
-			if (name.ToString() == "Progman" || name.ToString() == "WorkerW")
-				return false;
-			var m = Screen.FromHandle(w).Bounds;
-			return r.Left <= m.Left && r.Top <= m.Top && r.Right >= m.Right &&
-			       r.Bottom >= m.Bottom;
-		}
 	}
 
 	// Lizard greens: olive-tinted darks, an anole-green accent, a lime
@@ -589,15 +566,6 @@ namespace LizardKing
 			return new PointF(a.X + (b.X - a.X) * 0.55f,
 					  a.Y + (b.Y - a.Y) * 0.55f);
 		}
-
-		// clip a borderless window to rounded corners
-		public static Region WindowRegion(Size size)
-		{
-			using (var p = Round(new RectangleF(0, 0, size.Width,
-							    size.Height),
-					     Window))
-				return new Region(p);
-		}
 	}
 
 	// The puck's serial port. Win32 calls rather than SerialPort: on a
@@ -611,6 +579,51 @@ namespace LizardKing
 		// reads: a hung window stops asking, and the puck gives the
 		// controller back to the PC
 		volatile bool beat, release;
+
+		// The latest input and state only, handed over by one posted
+		// message at a time: when the window thread falls behind, stale
+		// ones are dropped instead of queueing, so a Guide press is never
+		// stuck behind seconds of them.
+		readonly object latest = new object();
+		InputState input;
+		PuckState state;
+		bool hasInput, hasState;
+		int posted;
+
+		void Hand(InputState? inp, PuckState? st)
+		{
+			lock (latest) {
+				if (inp.HasValue) {
+					input = inp.Value;
+					hasInput = true;
+				}
+				if (st.HasValue) {
+					state = st.Value;
+					hasState = true;
+				}
+			}
+			if (Interlocked.Exchange(ref posted, 1) == 0)
+				app.Post(Deliver);
+		}
+
+		void Deliver()
+		{
+			posted = 0;
+			bool i, s;
+			InputState inp;
+			PuckState st;
+			lock (latest) {
+				i = hasInput;
+				s = hasState;
+				inp = input;
+				st = state;
+				hasInput = hasState = false;
+			}
+			if (s)
+				app.OnState(st);
+			if (i)
+				app.OnInput(inp);
+		}
 
 		// keep the controller's input to the Guide (practice mode)
 		public void Beat()
@@ -766,10 +779,7 @@ namespace LizardKing
 				var st = new PuckState(int.Parse(f[1]), int.Parse(f[2]),
 						       int.Parse(f[3]),
 						       f.Length == 5 && f[4] != "0");
-				app.Post(delegate { app.OnState(st); });
-			} else if (f[0] == "KK" && f.Length == 3) {
-				int pad = int.Parse(f[1]), zone = int.Parse(f[2]);
-				app.Post(delegate { app.OnPress(pad, zone); });
+				Hand(null, st);
 			} else if (f[0] == "KB" && f.Length == 14) {
 				var inp = new InputState();
 				inp.Buttons = Convert.ToUInt32(f[1], 16);
@@ -785,7 +795,7 @@ namespace LizardKing
 				inp.RPY = int.Parse(f[11]);
 				inp.Own0 = Convert.ToUInt32(f[12], 16);
 				inp.Own1 = Convert.ToUInt32(f[13], 16);
-				app.Post(delegate { app.OnInput(inp); });
+				Hand(inp, null);
 			} else if (f[0] == "KT" && f.Length == 9) {
 				var st = new CtlStatus();
 				st.Connected = f[1] == "1";
@@ -893,10 +903,7 @@ namespace LizardKing
 				foreach (int lz in steps) {
 					var st = new PuckState(KeyOverlay.LayerKbd, 4, lz,
 							       false);
-					app.Post(delegate {
-						app.OnState(st);
-						app.OnPress(KeyOverlay.PadR, 1);
-					});
+					app.Post(delegate { app.OnState(st); });
 					Thread.Sleep(600);
 				}
 			}
@@ -1022,18 +1029,16 @@ namespace LizardKing
 		}
 	}
 
-	// One chord in a title bar's cheat sheet. Lit 0..1 while it fades after
-	// use; a prompt (the install chord until installed) is outlined.
+	// One chord in a title bar's cheat sheet; a prompt (the install chord
+	// until installed) is outlined.
 	struct Chord
 	{
 		public string Text;
-		public double Lit;
 		public bool Prompt;
 
-		public Chord(string text, double lit, bool prompt)
+		public Chord(string text, bool prompt)
 		{
 			Text = text;
-			Lit = lit;
 			Prompt = prompt;
 		}
 	}
@@ -1077,9 +1082,8 @@ namespace LizardKing
 				x -= w;
 				var r = new RectangleF(x, cy - 15, w, 30);
 				x -= 8;
-				Color fill = Theme.Mix(c.Prompt ? Theme.AccentFill : Theme.Cell,
-						       Theme.Accent, c.Lit);
-				using (var b = new SolidBrush(fill))
+				using (var b = new SolidBrush(c.Prompt ? Theme.AccentFill :
+									 Theme.Cell))
 				using (var p = Shape.Round(r, 7))
 					g.FillPath(b, p);
 				if (c.Prompt) {
@@ -1087,10 +1091,204 @@ namespace LizardKing
 					using (var p = Shape.Round(r, 7))
 						g.DrawPath(pen, p);
 				}
-				// dark text on the bright green, for contrast
-				using (var b = new SolidBrush(Theme.Mix(Theme.Ink, Theme.Bg,
-									c.Lit)))
+				using (var b = new SolidBrush(Theme.Ink))
 					g.DrawString(c.Text, Small, b, r, Center);
+			}
+		}
+	}
+
+	// A window that shows only what it draws, on top of everything, and
+	// never takes a click or the focus. Its picture goes to the compositor
+	// through a Surface rather than the window's own GDI surface (see
+	// Gpu.cs), so it keeps up over a game holding the GPU. Redrawing is a
+	// posted message of its own rather than WM_PAINT, which has nothing to
+	// paint here (it even arrives with an empty clip).
+	abstract class Overlay : Form
+	{
+		readonly double opacity;
+		Surface surface;
+		// the picture, transparent outside the rounded outline
+		Bitmap canvas;
+		Region outline;
+		// what needs redrawing, and whether a redraw is already posted
+		Rectangle dirty;
+		bool posted, up;
+		// once the GPU can be had again, after Gpu.Open's wait
+		readonly System.Windows.Forms.Timer retry =
+			new System.Windows.Forms.Timer { Interval = 2100 };
+
+		protected Overlay(Color bg, double opacity)
+		{
+			retry.Tick += delegate {
+				retry.Stop();
+				Post();
+			};
+			FormBorderStyle = FormBorderStyle.None;
+			ShowInTaskbar = false;
+			StartPosition = FormStartPosition.Manual;
+			TopMost = true;
+			BackColor = bg;
+			this.opacity = opacity;
+		}
+
+		// layered + transparent: clicks pass through; noactivate and
+		// toolwindow: never takes focus, stays out of the taskbar and
+		// Alt-Tab; no redirection bitmap: Windows keeps no GDI surface
+		// for it, the Surface is all there is
+		protected override CreateParams CreateParams
+		{
+			get {
+				var cp = base.CreateParams;
+				cp.ExStyle |= 0x80000 | 0x20 | 0x8000000 | 0x80 | 0x8 |
+					      0x200000;
+				return cp;
+			}
+		}
+
+		protected override bool ShowWithoutActivation
+		{
+			get { return true; }
+		}
+
+		public bool Up
+		{
+			get { return up; }
+			set {
+				if (value == up)
+					return;
+				up = value;
+				if (up)
+					Redraw();
+				else
+					TakeDown();
+			}
+		}
+
+		void TakeDown()
+		{
+			if (surface == null)
+				return;
+			// a surface on a lost device goes, and its picture with it
+			if (surface.Stale) {
+				Drop();
+				return;
+			}
+			try {
+				surface.Hide();
+			} catch (Exception) {
+				Lose();
+			}
+		}
+
+		protected override void OnHandleCreated(EventArgs e)
+		{
+			base.OnHandleCreated(e);
+			Connect();
+			if (up)
+				Post();
+		}
+
+		// A surface on the current device, made if need be; false when
+		// the GPU can't be had just now. A lost device is let go here
+		// and reopened, so a driver reset costs a frame, not the window.
+		bool Connect()
+		{
+			if (surface != null && !surface.Stale)
+				return true;
+			Drop();
+			if (!Gpu.Open()) {
+				retry.Start();
+				return false;
+			}
+			try {
+				surface = new Surface(Handle, opacity);
+				return true;
+			} catch (Exception) {
+				Lose();
+				return false;
+			}
+		}
+
+		void Drop()
+		{
+			if (surface != null)
+				surface.Dispose();
+			surface = null;
+		}
+
+		void Lose()
+		{
+			Drop();
+			Gpu.Lost();
+			// the new surface needs the whole picture
+			dirty = ClientRectangle;
+			retry.Start();
+		}
+
+		// clip: what changed; g is clipped to it, and the rest of the
+		// picture is kept from before
+		protected abstract void Draw(Graphics g, Rectangle clip);
+
+		// Marks part of the picture changed, to be redrawn once the
+		// messages already queued are handled; what changes meanwhile
+		// joins that redraw, so a stream of input draws as fast as
+		// drawing goes (the Guide about 60 a second) and no faster. Down,
+		// nothing happens: the puck streams input and status while a game
+		// is played, and coming up redraws it all anyway.
+		protected void Redraw(Rectangle r)
+		{
+			if (!up)
+				return;
+			dirty = dirty.IsEmpty ? r : Rectangle.Union(dirty, r);
+			Post();
+		}
+
+		protected void Redraw()
+		{
+			Redraw(ClientRectangle);
+		}
+
+		void Post()
+		{
+			// while the GPU is away, the retry brings the redraw
+			if (posted || retry.Enabled || !IsHandleCreated)
+				return;
+			posted = true;
+			BeginInvoke(new MethodInvoker(Present));
+		}
+
+		void Present()
+		{
+			posted = false;
+			if (!up || ClientSize.Width == 0 || ClientSize.Height == 0 ||
+			    !Connect())
+				return;
+			var all = new Rectangle(Point.Empty, ClientSize);
+			var clip = Rectangle.Intersect(dirty, all);
+			dirty = Rectangle.Empty;
+			if (canvas == null || canvas.Size != ClientSize) {
+				if (canvas != null) {
+					canvas.Dispose();
+					outline.Dispose();
+				}
+				canvas = new Bitmap(ClientSize.Width, ClientSize.Height,
+						    PixelFormat.Format32bppPArgb);
+				using (var p = Shape.Round(all, Shape.Window))
+					outline = new Region(p);
+				clip = all;
+			}
+			if (clip.IsEmpty)
+				return;
+			using (var g = Graphics.FromImage(canvas)) {
+				g.SetClip(outline, CombineMode.Replace);
+				g.SetClip(clip, CombineMode.Intersect);
+				g.Clear(BackColor);
+				Draw(g, clip);
+			}
+			try {
+				surface.Show(canvas);
+			} catch (Exception) {
+				Lose();
 			}
 		}
 	}
@@ -1098,7 +1296,7 @@ namespace LizardKing
 	// The keyboard key map: both pads' 3x3 grids for the zone the other
 	// thumb rests in. Shown on its own as a small overlay, and painted into
 	// the Guide window's key map panel.
-	class KeyOverlay : Form
+	class KeyOverlay : Overlay
 	{
 		public const int LayerKbd = 1, Zones = 9, Center = 4;
 		public const int PadR = 0, PadL = 1;
@@ -1132,21 +1330,9 @@ namespace LizardKing
 		// direction
 		const int MiniOff = 29;
 		const int MiniPt = 9;
-		// a step's glyph transition: just long enough to be seen
-		const double AnimMs = 60;
-		// a typed key's cell starts at full flash and fades back
-		const double FlashMs = 75;
-		// the zone a thumb just left fades back over LeaveMs instead of
-		// snapping (the zone entered lights up at once)
-		const double LeaveMs = 80;
 
-		readonly Stopwatch clock = Stopwatch.StartNew();
-		readonly System.Windows.Forms.Timer frames =
-			new System.Windows.Forms.Timer();
 		readonly Dictionary<string, Font> fonts =
 			new Dictionary<string, Font>();
-		readonly Dictionary<int, double> flashes =
-			new Dictionary<int, double>();
 		readonly StringFormat centered = new StringFormat {
 			Alignment = StringAlignment.Center,
 			LineAlignment = StringAlignment.Center,
@@ -1154,17 +1340,8 @@ namespace LizardKing
 		};
 
 		int[,,] keymap;
-		// over a fullscreen game (decided as it, or the Guide, appears): no
-		// glyph growth, zone fades or key flashes
-		public bool Lean;
 		PuckState state = new PuckState(0, Center, Center, false);
-		PuckState shown;
-		bool hasShown, low = true, allowed;
-		double animStart = -1;
-		int[] animDr = new int[2], animDc = new int[2];
-		bool[] animPad = new bool[2];
-		int[] leftZone = { -1, -1 };
-		double[] leftAt = new double[2];
+		bool low = true, allowed;
 
 		// raised whenever the key map's picture changes (the Guide window
 		// repaints its copy)
@@ -1180,16 +1357,9 @@ namespace LizardKing
 		{
 			set {
 				status = value;
-				if (Opacity > 0)
-					Invalidate(new Rectangle(0, 0, ClientSize.Width,
-								 HeaderH));
+				Redraw(new Rectangle(0, 0, ClientSize.Width,
+						     HeaderH));
 			}
-		}
-
-		protected override void OnHandleCreated(EventArgs e)
-		{
-			base.OnHandleCreated(e);
-			RawSource.Register(Handle);
 		}
 
 		protected override void WndProc(ref Message m)
@@ -1203,45 +1373,10 @@ namespace LizardKing
 			base.WndProc(ref m);
 		}
 
-		public KeyOverlay()
+		public KeyOverlay() : base(Theme.Bg, 0.92)
 		{
-			FormBorderStyle = FormBorderStyle.None;
-			ShowInTaskbar = false;
-			StartPosition = FormStartPosition.Manual;
-			TopMost = true;
-			BackColor = Theme.Bg;
-			Opacity = 0;
 			FitSize();
-			SetStyle(ControlStyles.AllPaintingInWmPaint |
-					 ControlStyles.OptimizedDoubleBuffer |
-					 ControlStyles.UserPaint,
-				 true);
-			frames.Interval = 16;
-			frames.Tick += delegate { FrameTick(); };
 			Place();
-		}
-
-		// layered + transparent: clicks pass through; noactivate and
-		// toolwindow: never takes focus, stays out of the taskbar and
-		// Alt-Tab
-		protected override CreateParams CreateParams
-		{
-			get {
-				var cp = base.CreateParams;
-				cp.ExStyle |= 0x80000 | 0x20 | 0x8000000 | 0x80 | 0x8;
-				return cp;
-			}
-		}
-
-		protected override bool ShowWithoutActivation
-		{
-			get { return true; }
-		}
-
-		protected override void OnSizeChanged(EventArgs e)
-		{
-			base.OnSizeChanged(e);
-			Region = Shape.WindowRegion(Size);
 		}
 
 		public bool HasKeymap
@@ -1272,23 +1407,13 @@ namespace LizardKing
 			get { return allowed; }
 			set {
 				allowed = value;
-				UpdateOpacity();
+				UpdateShown();
 			}
 		}
 
-		void UpdateOpacity()
+		void UpdateShown()
 		{
-			bool show = allowed && state.Layer == LayerKbd && keymap != null;
-			if (show && Opacity == 0)
-				Lean = Native.FullscreenInFront();
-			Opacity = show ? 0.92 : 0;
-		}
-
-		void Repaint()
-		{
-			Invalidate();
-			if (Changed != null)
-				Changed();
+			Up = allowed && state.Layer == LayerKbd && keymap != null;
 		}
 
 		Font FontOf(int pt, bool bold)
@@ -1355,7 +1480,7 @@ namespace LizardKing
 				small = value;
 				FitSize();
 				Place();
-				Invalidate();
+				Redraw();
 			}
 		}
 
@@ -1367,7 +1492,7 @@ namespace LizardKing
 					return;
 				low = value;
 				Place();
-				Invalidate();
+				Redraw();
 			}
 		}
 
@@ -1379,57 +1504,11 @@ namespace LizardKing
 
 		public void OnState(PuckState st)
 		{
-			var prev = shown;
-			bool hadPrev = hasShown;
-			state = shown = st;
-			hasShown = true;
-			UpdateOpacity();
-			animStart = -1;
-			// The other thumb stepping one zone: each new glyph grows
-			// out of the hint that announced it. Labels are final at
-			// once, so the animation never holds back what a click
-			// types.
-			bool any = false;
-			bool leaving = false;
-			bool steps = !Lean && st.Layer == LayerKbd && hadPrev &&
-				     prev.Layer == LayerKbd;
-			if (steps) {
-				for (int pad = 0; pad < 2; pad++) {
-					int o = OwnZone(prev, pad);
-					if (o != OwnZone(st, pad)) {
-						leftZone[pad] = o;
-						leftAt[pad] = clock.Elapsed.TotalMilliseconds;
-						leaving = true;
-					}
-				}
-			}
-			if (leaving)
-				frames.Start();
-			if (steps) {
-				for (int pad = 0; pad < 2; pad++) {
-					int o = OtherZone(prev, pad), n = OtherZone(st, pad);
-					int dr = n / 3 - o / 3, dc = n % 3 - o % 3;
-					animPad[pad] = o != n && Math.Abs(dr) <= 1 &&
-						       Math.Abs(dc) <= 1;
-					animDr[pad] = dr;
-					animDc[pad] = dc;
-					any |= animPad[pad];
-				}
-			}
-			if (any) {
-				animStart = clock.Elapsed.TotalMilliseconds;
-				frames.Start();
-			}
-			Repaint();
-		}
-
-		public void OnPress(int pad, int zone)
-		{
-			if (pad < 0 || pad > 1 || zone < 0 || zone >= Zones || Lean)
-				return;
-			flashes[pad * Zones + zone] = clock.Elapsed.TotalMilliseconds;
-			frames.Start();
-			Repaint();
+			state = st;
+			UpdateShown();
+			Redraw();
+			if (Changed != null)
+				Changed();
 		}
 
 		static int OtherZone(PuckState st, int pad)
@@ -1442,30 +1521,8 @@ namespace LizardKing
 			return pad == PadR ? st.ZoneR : st.ZoneL;
 		}
 
-		void FrameTick()
+		protected override void Draw(Graphics g, Rectangle clip)
 		{
-			double now = clock.Elapsed.TotalMilliseconds;
-			if (animStart >= 0 && now - animStart >= AnimMs)
-				animStart = -1;
-			var done = new List<int>();
-			foreach (var kv in flashes)
-				if (now - kv.Value >= FlashMs)
-					done.Add(kv.Key);
-			foreach (int k in done)
-				flashes.Remove(k);
-			bool fading = false;
-			for (int pad = 0; pad < 2; pad++)
-				fading |= leftZone[pad] >= 0 &&
-					  now - leftAt[pad] < LeaveMs;
-			if (animStart < 0 && flashes.Count == 0 && !fading)
-				frames.Stop();
-			Repaint();
-		}
-
-		protected override void OnPaint(PaintEventArgs pe)
-		{
-			var g = pe.Graphics;
-			g.Clear(Theme.Bg);
 			g.SmoothingMode = SmoothingMode.AntiAlias;
 			using (var pen = new Pen(Theme.Edge, 2))
 			using (var bp = Shape.Round(new RectangleF(1, 1,
@@ -1486,7 +1543,7 @@ namespace LizardKing
 			TitleBar.Paint(g, ClientSize.Width, "Key map", status,
 				       new[] { new Chord(low ? "Guide + right pad: move up" :
 							       "Guide + right pad: move down",
-							 0, false) });
+							 false) });
 			g.TranslateTransform(0, HeaderH - TitleTuck);
 			PaintKeys(g, Large, true, true, 1);
 		}
@@ -1508,15 +1565,8 @@ namespace LizardKing
 				return;
 			g.SmoothingMode = SmoothingMode.AntiAlias;
 			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-			double now = clock.Elapsed.TotalMilliseconds;
-			double e = 1;
-			if (animStart >= 0) {
-				double p = Math.Min(1, (now - animStart) / AnimMs);
-				// ease out: most of the way in the first frame
-				e = 1 - Math.Pow(1 - p, 3);
-			}
 			for (int pad = 0; pad < 2; pad++)
-				PaintPad(g, geo, pad, now, e, glyphs, level);
+				PaintPad(g, geo, pad, glyphs, level);
 			if (!legend)
 				return;
 			using (var b = new SolidBrush(Theme.Dim))
@@ -1528,34 +1578,21 @@ namespace LizardKing
 					     centered);
 		}
 
-		void PaintPad(Graphics g, Geo geo, int pad, double now, double e,
-			      bool glyphs, double level)
+		void PaintPad(Graphics g, Geo geo, int pad, bool glyphs, double level)
 		{
 			Func<Color, Color> fade = c => Theme.Mix(Theme.Panel, c, level);
 			int cs = geo.Cell, m = geo.Margin;
 			int x0 = pad == PadL ? m : m + geo.Grid + geo.PadGap;
 			int other = OtherZone(state, pad), ro = other / 3,
 			    co = other % 3;
-			bool anim = animStart >= 0 && animPad[pad];
 			bool live = glyphs && state.Layer == LayerKbd;
 			for (int z = 0; z < Zones; z++) {
 				int x = x0 + (z % 3) * (cs + geo.Gap);
 				int y = m + (z / 3) * (cs + geo.Gap);
 				float cx = x + cs / 2f, cy = y + cs / 2f;
-				bool here = live && z == OwnZone(state, pad);
-				// how lit the cell is: 1 under the thumb, easing out
-				// from 1 for the zone it just left
-				double lit = here ? 1 : 0;
-				if (live && !here && z == leftZone[pad]) {
-					double t = (now - leftAt[pad]) / LeaveMs;
-					if (t < 1)
-						lit = (1 - t) * (1 - t);
-				}
+				// lit under the thumb
+				double lit = live && z == OwnZone(state, pad) ? 1 : 0;
 				Color fill = Theme.Mix(Theme.Cell, Theme.AccentFill, lit);
-				double t0;
-				if (live && flashes.TryGetValue(pad * Zones + z, out t0))
-					fill = Theme.Mix(Theme.Flash, fill,
-							 Math.Min(1, (now - t0) / FlashMs));
 				// the grid's outer corners are rounded like the pad itself
 				float big = geo.Corner;
 				using (var cell = Shape.Round(
@@ -1579,20 +1616,8 @@ namespace LizardKing
 				string label = pos >= 0 ?
 					Hid.Label(keymap[pad, other, pos], state.Shift) :
 					"";
-				Color ink = Theme.Ink;
-				float bx = cx, by = cy;
-				Font font = FontOf(geo.Pt, true);
-				if (anim && z != Center) {
-					float k = (float)((1 - e) * MiniOff);
-					bx += animDc[pad] * k;
-					by += animDr[pad] * k;
-					int pt = (int)Math.Round(MiniPt +
-								 (geo.Pt - MiniPt) * e);
-					font = FontOf(pt, e > 0.5);
-					ink = Theme.Mix(Theme.Dim, ink, e);
-				}
 				// names shrink to the letters' span, clear of the hints
-				DrawFit(g, label, font, fade(ink), bx, by,
+				DrawFit(g, label, FontOf(geo.Pt, true), fade(Theme.Ink), cx, cy,
 					geo.Hints ? cs / 2 : cs - 8, x, x + cs);
 
 				if (pos < 0 || !geo.Hints)
@@ -2013,7 +2038,7 @@ namespace LizardKing
 	// The Guide: the gamepad on the left; the keyboard on the right,
 	// with the key map under it. The layer your thumbs select is outlined;
 	// the others stay readable but faded.
-	class GuideWindow : Form
+	class GuideWindow : Overlay
 	{
 		const int HeaderH = TitleBar.Height, Gap = 16;
 		readonly KeyOverlay keys;
@@ -2035,101 +2060,34 @@ namespace LizardKing
 					      GraphicsUnit.Pixel);
 		readonly Font small = new Font("Segoe UI", 15f, GraphicsUnit.Pixel);
 		readonly Font label = new Font("Segoe UI", 46f, GraphicsUnit.Pixel);
-		readonly Font labelB = new Font("Segoe UI Semibold", 46f,
-						GraphicsUnit.Pixel);
 		PuckState state;
 		InputState input;
 		readonly bool installed;
-		// input changed: the panel in use, and the other one when a button
-		// held across a layer change (lit there) changed
-		bool dirty, dirtyOther;
-		readonly System.Windows.Forms.Timer frames =
-			new System.Windows.Forms.Timer();
 		// the window edge, panels and scale texture, which never change:
 		// drawn once, copied under every repaint
 		Bitmap backdrop;
 
-		bool lean;
-
 		public GuideWindow(KeyOverlay keys, bool installed)
+			: base(Theme.Bg, 1)
 		{
-			frames.Interval = 16;
-			frames.Tick += delegate { FrameTick(); };
-			frames.Start();
 			this.keys = keys;
 			this.installed = installed;
-			FormBorderStyle = FormBorderStyle.None;
-			ShowInTaskbar = false;
-			StartPosition = FormStartPosition.Manual;
-			TopMost = true;
-			BackColor = Theme.Bg;
-			Opacity = 0;
-			SetStyle(ControlStyles.AllPaintingInWmPaint |
-					 ControlStyles.OptimizedDoubleBuffer |
-					 ControlStyles.UserPaint |
-					 ControlStyles.ResizeRedraw,
-				 true);
 			var s = Screen.PrimaryScreen.WorkingArea;
 			int w = s.Width * 9 / 10, h = s.Height * 9 / 10;
 			Bounds = new Rectangle(s.X + (s.Width - w) / 2,
 					       s.Y + (s.Height - h) / 2, w, h);
-			keys.Changed += delegate {
-				if (Opacity > 0)
-					Invalidate(KeyArea());
-			};
+			keys.Changed += delegate { Redraw(KeyArea()); };
 		}
 
-		protected override CreateParams CreateParams
-		{
-			get {
-				var cp = base.CreateParams;
-				cp.ExStyle |= 0x80000 | 0x20 | 0x8000000 | 0x80 | 0x8;
-				return cp;
-			}
-		}
-
-		protected override bool ShowWithoutActivation
-		{
-			get { return true; }
-		}
-
-		protected override void OnSizeChanged(EventArgs e)
-		{
-			base.OnSizeChanged(e);
-			Region = Shape.WindowRegion(Size);
-		}
-
+		// the panel in use, and the other one when a button held across
+		// a layer change (lit there) changed
 		public void OnInput(InputState inp)
 		{
 			int other = 1 - state.Layer;
+			Redraw(Panel(state.Layer));
 			if (inp.Own(other) != input.Own(other))
-				dirtyOther = true;
+				Redraw(Panel(other));
 			input = inp;
-			dirty = true;
-		}
-
-		void FrameTick()
-		{
-			if (Opacity > 0) {
-				if (dirty)
-					Invalidate(Panel(state.Layer));
-				if (dirtyOther || Fading)
-					Invalidate(Panel(1 - state.Layer));
-				if (Lighting)
-					Invalidate(new Rectangle(0, 0, ClientSize.Width,
-								 HeaderH));
-			}
-			dirty = dirtyOther = false;
-		}
-
-		// Lean, over a fullscreen game (decided as the Guide appears): 30
-		// fps without fades or chip glows, to leave the game the CPU
-		public bool Lean
-		{
-			set {
-				lean = value;
-				frames.Interval = value ? 33 : 16;
-			}
 		}
 
 		CtlStatus status;
@@ -2137,47 +2095,23 @@ namespace LizardKing
 		public void OnStatus(CtlStatus st)
 		{
 			status = st;
-			Invalidate(new Rectangle(0, 0, ClientSize.Width, HeaderH));
+			Redraw(new Rectangle(0, 0, ClientSize.Width, HeaderH));
 		}
 
+		// how lit a panel is: 1 in use, Dim the other
+		const double Dim = 0.4;
 
-		// The panel just left fades back over LeaveMs instead of snapping,
-		// which looked jarring when switching layers quickly; the panel
-		// entered lights up at once.
-		const double LeaveMs = 80, Dim = 0.4;
-		readonly Stopwatch fade = Stopwatch.StartNew();
-		int leaving = -1;
-
-		bool Fading
-		{
-			get {
-				return !lean && leaving >= 0 &&
-				       fade.Elapsed.TotalMilliseconds < LeaveMs;
-			}
-		}
-
-		// how lit a panel is: 1 in use, Dim faded, in between while left
 		double Level(int layer)
 		{
-			if (state.Layer == layer)
-				return 1;
-			if (layer != leaving || !Fading)
-				return Dim;
-			double t = fade.Elapsed.TotalMilliseconds / LeaveMs;
-			// ease out: most of the fall early, a soft finish
-			return Dim + (1 - Dim) * (1 - t) * (1 - t);
+			return state.Layer == layer ? 1 : Dim;
 		}
 
 		public void OnState(PuckState st)
 		{
-			if (st.Layer != state.Layer) {
-				leaving = state.Layer;
-				fade.Restart();
-			}
 			bool layerChanged = st.Layer != state.Layer;
 			state = st;
-			if (layerChanged && Opacity > 0)
-				Invalidate();
+			if (layerChanged)
+				Redraw();
 		}
 
 		// 0 controller (the left column), 1 keyboard (the right column)
@@ -2206,9 +2140,8 @@ namespace LizardKing
 					     q.Bottom - a.Bottom - 20);
 		}
 
-		protected override void OnPaint(PaintEventArgs pe)
+		protected override void Draw(Graphics g, Rectangle clip)
 		{
-			var g = pe.Graphics;
 			if (backdrop == null || backdrop.Size != ClientSize)
 				backdrop = Backdrop();
 			g.CompositingMode = CompositingMode.SourceCopy;
@@ -2216,14 +2149,14 @@ namespace LizardKing
 			g.CompositingMode = CompositingMode.SourceOver;
 			g.SmoothingMode = SmoothingMode.AntiAlias;
 			g.TextRenderingHint = TextRenderingHint.AntiAliasGridFit;
-			if (pe.ClipRectangle.Top < HeaderH)
+			if (clip.Top < HeaderH)
 				PaintHeader(g);
 			string[] names = { "Controller (default)",
 					   "Keyboard (touch both pads)" };
 			for (int i = 0; i < 2; i++)
-				if (pe.ClipRectangle.IntersectsWith(Panel(i)))
+				if (clip.IntersectsWith(Panel(i)))
 					PaintController(g, i, names[i]);
-			if (pe.ClipRectangle.IntersectsWith(KeyArea()))
+			if (clip.IntersectsWith(KeyArea()))
 				PaintKeyMap(g, KeyArea());
 		}
 
@@ -2253,60 +2186,27 @@ namespace LizardKing
 		void PaintHeader(Graphics g)
 		{
 			var chords = new List<Chord> {
-				new Chord("Guide: close", 0, false),
+				new Chord("Guide: close", false),
 				// each says what it will do now
 				new Chord(new[] { "Guide + left pad: show key map",
 						  "Guide + left pad: small key map",
 						  "Guide + left pad: hide key map" }
 						  [status.KeymapSize % 3],
-					  LitLevel(ChordKeymap), false),
+					  false),
 				new Chord(status.KeymapLow ? "Guide + right pad: key map up" :
 							     "Guide + right pad: key map down",
-					  LitLevel(ChordMove), false),
-				new Chord("Guide + Back: controller off", 0, false),
+					  false),
+				new Chord("Guide + Back: controller off", false),
 			};
 			// until installed, the next step is outlined
 			if (!installed)
-				chords.Add(new Chord("Guide + Start: install",
-						     LitLevel(ChordInstall), true));
+				chords.Add(new Chord("Guide + Start: install", true));
 			// a puck tuned from the console isn't showing what ships
 			TitleBar.Paint(g, ClientSize.Width,
 				       status.Dev ? "LizardKing Guide · dev overrides" :
 						    "LizardKing Guide",
 				       status,
 				       chords.ToArray());
-		}
-
-		// A chord's chip lights up when the puck reports its effect, then
-		// fades over LitMs.
-		public const int ChordKeymap = 0, ChordMove = 1, ChordInstall = 2;
-		const double LitMs = 600;
-		readonly Stopwatch clock = Stopwatch.StartNew();
-		readonly double[] litAt = { -LitMs, -LitMs, -LitMs };
-
-		public void Light(int chord)
-		{
-			litAt[chord] = clock.Elapsed.TotalMilliseconds;
-			dirty = true;
-		}
-
-		double LitLevel(int chord)
-		{
-			if (lean)
-				return 0;
-			double t = (clock.Elapsed.TotalMilliseconds - litAt[chord]) / LitMs;
-			return t >= 1 ? 0 : (1 - t) * (1 - t);
-		}
-
-		bool Lighting
-		{
-			get {
-				foreach (int c in new[] { ChordKeymap, ChordMove,
-							  ChordInstall })
-					if (LitLevel(c) > 0)
-						return true;
-				return false;
-			}
 		}
 
 		static GraphicsPath Rounded(RectangleF r, float rad)
@@ -2489,54 +2389,25 @@ namespace LizardKing
 
 	// A click-through, always-on-top window that shows itself for a moment
 	// and hides again; nothing on it is clickable.
-	class Popup : Form
+	abstract class Popup : Overlay
 	{
 		readonly System.Windows.Forms.Timer hide =
 			new System.Windows.Forms.Timer();
 
-		protected Popup(int showMs, Color bg, Size size)
+		protected Popup(int showMs, Color bg, Size size) : base(bg, 0.95)
 		{
-			FormBorderStyle = FormBorderStyle.None;
-			ShowInTaskbar = false;
-			StartPosition = FormStartPosition.Manual;
-			TopMost = true;
-			BackColor = bg;
-			Opacity = 0;
 			Size = size;
 			hide.Interval = showMs;
 			hide.Tick += delegate {
 				hide.Stop();
-				Opacity = 0;
+				Up = false;
 			};
-		}
-
-		// layered + transparent: clicks pass through; noactivate and
-		// toolwindow: never takes focus, stays out of the taskbar and
-		// Alt-Tab
-		protected override CreateParams CreateParams
-		{
-			get {
-				var cp = base.CreateParams;
-				cp.ExStyle |= 0x80000 | 0x20 | 0x8000000 | 0x80 | 0x8;
-				return cp;
-			}
-		}
-
-		protected override bool ShowWithoutActivation
-		{
-			get { return true; }
-		}
-
-		protected override void OnSizeChanged(EventArgs e)
-		{
-			base.OnSizeChanged(e);
-			Region = Shape.WindowRegion(Size);
 		}
 
 		protected void Pop()
 		{
-			Invalidate();
-			Opacity = 0.95;
+			Redraw();
+			Up = true;
 			hide.Stop();
 			hide.Start();
 		}
@@ -2589,10 +2460,8 @@ namespace LizardKing
 			Pop(ms);
 		}
 
-		protected override void OnPaint(PaintEventArgs pe)
+		protected override void Draw(Graphics g, Rectangle clip)
 		{
-			var g = pe.Graphics;
-			g.Clear(Theme.AccentFill);
 			Frame(g, Theme.Accent);
 			using (var b = new SolidBrush(Theme.Ink))
 				g.DrawString(text, font, b, ClientRectangle,
@@ -2632,10 +2501,8 @@ namespace LizardKing
 			Pop();
 		}
 
-		protected override void OnPaint(PaintEventArgs pe)
+		protected override void Draw(Graphics g, Rectangle clip)
 		{
-			var g = pe.Graphics;
-			g.Clear(Theme.Bg);
 			Frame(g, Theme.Edge);
 			var area = new RectangleF(16, 14, Width - 32, Height - 74);
 			float k = Math.Min(area.Width / Crop.Width,
@@ -2819,15 +2686,14 @@ namespace LizardKing
 		void Apply()
 		{
 			Keys.Allowed = !guideUp && (!hasSwitches || last.KeymapSize > 0);
-			guide.Opacity = guideUp ? 0.995 : 0;
+			guide.Up = guideUp;
+			RawSource.Listen(Keys.Handle, guideUp);
 			if (Link != null) {
 				if (guideUp)
 					Link.Beat();
 				else
 					Link.Release();
 			}
-			if (guideUp)
-				guide.Invalidate();
 		}
 
 		// The puck sends no cursor movement while the Guide is up, so the
@@ -2848,14 +2714,10 @@ namespace LizardKing
 		public void ToggleGuide()
 		{
 			guideUp = !guideUp;
-			if (guideUp) {
-				bool lean = Native.FullscreenInFront();
-				guide.Lean = lean;
-				Keys.Lean = lean;
+			if (guideUp)
 				Park();
-			} else {
+			else
 				Cursor.Position = cursor;
-			}
 			Apply();
 		}
 
@@ -2866,7 +2728,6 @@ namespace LizardKing
 
 		public void InstallChord()
 		{
-			guide.Light(GuideWindow.ChordInstall);
 			if (installed)
 				toast.Say("Installed");
 			else
@@ -2898,11 +2759,6 @@ namespace LizardKing
 			guide.OnState(st);
 		}
 
-		public void OnPress(int pad, int zone)
-		{
-			Keys.OnPress(pad, zone);
-		}
-
 		public void OnInput(InputState inp)
 		{
 			guide.OnInput(inp);
@@ -2930,13 +2786,11 @@ namespace LizardKing
 			if (guideUp && !st.Connected)
 				ToggleGuide();
 			if (hasSwitches && st.KeymapSize != last.KeymapSize) {
-				guide.Light(GuideWindow.ChordKeymap);
 				if (!guideUp)
 					toast.Say(new[] { "Key map off", "Key map large",
 							  "Key map small" }[st.KeymapSize % 3]);
 			}
 			if (hasSwitches && st.KeymapLow != last.KeymapLow) {
-				guide.Light(GuideWindow.ChordMove);
 				if (!guideUp)
 					toast.Say(st.KeymapLow ? "Key map bottom" :
 								 "Key map top");
@@ -2968,9 +2822,6 @@ namespace LizardKing
 				Native.SetProcessDpiAwareness(2);
 			} catch (Exception) {
 			}
-			// Windows' default 15.6 ms timer tick would stretch the
-			// animation frames
-			Native.timeBeginPeriod(1);
 			Application.EnableVisualStyles();
 			bool demo = Array.IndexOf(args, "--demo") >= 0;
 			bool fresh = Array.IndexOf(args, "--installed") >= 0;

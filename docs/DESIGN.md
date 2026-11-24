@@ -221,10 +221,10 @@ can be held with the left hand while a thumb lifts to drive the cursor.
 
 ## LizardKing Guide
 
-`guide/LizardKingGuide.cs`: a single-file C# program for the .NET
+`guide/LizardKingGuide.cs` and `guide/Gpu.cs`: a C# program for the .NET
 Framework 4.x that ships with Windows 10/11, so it needs nothing installed.
 `make build` compiles it with the framework's own `csc` (or run
-`guide/build.cmd`) into `build/guide/LizardKingGuide.exe`, about 45 KB.
+`guide/build.cmd`) into `build/guide/LizardKingGuide.exe`, about 75 KB.
 
 Look: lizard greens (olive-tinted darks, an anole-green accent, a lime
 highlight; low battery stays amber), with a faint pattern of rounded scales
@@ -268,25 +268,18 @@ switches, both on the Guide button:
   seconds, once each time. Guide + Back turns the controller off only once
   both are released: a Guide button still down would wake it straight back
   up, wired.
-  Switching layers, the panel entered lights up at once and the one left
-  fades back over 80 ms, which takes the edge off quick switches.
-  It stays light over a game: the window edge, panels and texture are
-  drawn once and copied under each repaint, input repaints only the panel
-  it changes. When it or the key map appears over a fullscreen window
-  (exclusive or borderless, most likely a game), it goes lean, leaving the
-  game the CPU: the Guide at 30 fps without fades or chip glows, the key
-  map without its glyph growth, zone fades and key flashes. Over anything
-  else it's rich again.
+  It stays light over a game: no animations, the window edge, panels and
+  texture drawn once and copied under each repaint, and input repainting
+  only the panel it changes, at most 60 times a second.
 - **The key map** (Guide + left pad click: large, small, off): the
   keyboard overlay alone. Large is a titled panel,
   shown while the Guide is down and both thumbs are
   on the pads: both pads' 3x3 grids for wherever the other thumb rests,
   each thumb's zone highlighted. Small faded glyphs around each key show
-  what it becomes if the other thumb steps one zone that way; new glyphs
-  grow out of their hints (60 ms); the zone a thumb leaves fades back over
-  80 ms while the one entered lights at once; letters show lower case and
-  Shift shows shifted forms; a typed key's cell flashes and fades over
-  75 ms. Small, the expert's, is each zone's own key alone in cells with
+  what it becomes if the other thumb steps one zone that way; letters show
+  lower case and Shift shows shifted forms. It repaints only when a thumb
+  changes zone or Shift changes; a typed key's confirmation is the
+  controller's click. Small, the expert's, is each zone's own key alone in cells with
   half the padding, and the battery over the signal between the pads (no
   percentage): no hints, title or legend. Guide + right pad click moves it
   between one and two thirds of the screen height. Both key map chords, used with the
@@ -307,8 +300,8 @@ How it works:
   underside, dashed and pulled out from under the pads.
 - It reads the puck's serial port. The key table comes from the firmware
   (`~m`), so it always matches what's flashed. `KS layer zoneR zoneL
-  shift` arrives whenever the layer, a thumb's zone or Shift changes; `KK
-  pad zone` for every typed key; `KG` on a Guide on/off press; `KI` on
+  shift` arrives whenever the layer, a thumb's zone or Shift changes; `KG`
+  on a Guide on/off press; `KI` on
   Guide + Start; `KT connected battery charge signal keymap low dev
   serial` about
   once a second and at once when a switch changes; `KB
@@ -321,9 +314,34 @@ How it works:
 - It finds the puck by its USB ID (`1209:0001`) in the registry and talks
   to the port with plain Win32 calls; .NET's `SerialPort` can crash the
   process from its own thread when the device is unplugged.
-- Serial lines are handled the moment they arrive; the frame timer runs
-  only while an animation or flash is on screen, with the Windows timer
-  resolution raised to 1 ms.
+- Serial lines are handled the moment they arrive, and only the newest
+  state and input wait for the window thread, never a queue of them: a
+  window thread held up catches up in one step instead of replaying the
+  past. A window redraws once whatever has changed: what changes while
+  it draws joins the next picture, so the Guide following the controller
+  draws about 60 times a second, as fast as drawing goes, with no timer
+  of its own.
+- Every window draws with GDI+ into a bitmap and hands it to the
+  compositor through its own Direct3D swap chain and DirectComposition
+  visual (`guide/Gpu.cs`), never through the window's GDI surface.
+  Windows copies a GDI surface to the compositor on the GPU at no
+  priority of the app's, and with a game holding an integrated GPU behind
+  a browser (Elite behind Firefox) a key map change took 1-10 s to show,
+  or never did. The swap chain's copy is the Guide's own GPU work, asked
+  at the realtime GPU scheduling class (high where that's refused): over
+  the same game a zone change reaches the screen in about 50 ms; what it
+  puts ahead of the game is one copy per change. Measured with PresentMon
+  over fullscreen Elite, a key map changing every 110 ms cost the game
+  about 1 fps of 59 and left it in independent flip. A GPU lost to a
+  driver reset is let go and reopened within about 2 s, the windows blank
+  meanwhile. Without a hardware GPU (a VM, the basic display driver) it
+  draws on Windows' software one. Opacity is the compositor's, and the
+  rounded corners are transparent pixels. A window that's down draws
+  nothing, though the puck streams input and status all the while.
+- `make bench` checks that with no puck and no one typing, the Guide's own
+  windows on this PC read back off the screen: an overlay shows at its
+  opacity and lets clicks through, and the key map keeps up with zone
+  changes. Run it with what was slow in front.
 - The Guide and the key map share one title bar (same code, same look):
   title, then a status chip with the controller's battery (a bolt while
   charging, amber at 15% and below) and signal bars, or "Controller

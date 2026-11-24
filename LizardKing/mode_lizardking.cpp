@@ -1084,10 +1084,6 @@ static void typeKey(int i, uint8_t key, uint8_t z)
 	s_pad[i].key = key;
 	s_pad[i].keyZone = z;
 	hapticKey(PULSE_SIDE[i], true);
-	// "KK pad zone" for the Guide's press flash; dropped, never waited
-	// for, when the CDC buffer is full
-	if (Serial && Serial.availableForWrite() >= 8)
-		Serial.printf("KK %d %u\n", i, z);
 }
 
 // A key zone with no key for where the other thumb rests is inert like the
