@@ -77,11 +77,15 @@ namespace LizardKing
 
 	// live controller input ("KB"): buttons as the firmware's TB_* bits,
 	// triggers 0..31, sticks and pad positions -32..32 (y up); Own0..2 the
-	// held buttons each layer owns, by where they were pressed
+	// held buttons each layer owns, by where they were pressed; MX, MY the
+	// pointer's travel in counts (y up), MW the wheel's in sixteenths of a
+	// notch, both wrapping at 16 bits. Ball and Wheel are the pads' surfaces
+	// as drawn (see MouseMotion).
 	struct InputState
 	{
 		public uint Buttons, Own0, Own1;
-		public int LT, RT, LX, LY, RX, RY, LPX, LPY, RPX, RPY;
+		public int LT, RT, LX, LY, RX, RY, LPX, LPY, RPX, RPY, MX, MY, MW;
+		public MouseMotion.Surface Ball, Wheel;
 
 		public uint Own(int layer)
 		{
@@ -784,7 +788,7 @@ namespace LizardKing
 						       f.Length >= 5 && f[4] != "0");
 				st.Hold = f.Length == 6 ? int.Parse(f[5]) : 0;
 				Hand(null, st);
-			} else if (f[0] == "KB" && f.Length == 14) {
+			} else if (f[0] == "KB" && f.Length >= 14) {
 				var inp = new InputState();
 				inp.Buttons = Convert.ToUInt32(f[1], 16);
 				inp.LT = int.Parse(f[2]);
@@ -799,6 +803,13 @@ namespace LizardKing
 				inp.RPY = int.Parse(f[11]);
 				inp.Own0 = Convert.ToUInt32(f[12], 16);
 				inp.Own1 = Convert.ToUInt32(f[13], 16);
+				// a firmware of another build may send other mouse
+				// fields: the buttons and sticks still light
+				if (f.Length == 17) {
+					inp.MX = int.Parse(f[14]);
+					inp.MY = int.Parse(f[15]);
+					inp.MW = int.Parse(f[16]);
+				}
 				Hand(inp, null);
 			} else if (f[0] == "KT" && f.Length == 9) {
 				var st = new CtlStatus();
@@ -851,6 +862,15 @@ namespace LizardKing
 				inp.RT = (int)(31 * (0.5 + 0.5 * Math.Cos(t * 1.7)));
 				inp.LPX = (int)(24 * Math.Cos(t * 1.3));
 				inp.LPY = (int)(24 * Math.Sin(t * 2.6));
+				// the wheel turning back and forth, and the pointer
+				// swept by a thumb on the right pad, slow then fast
+				inp.MW = (int)(400 * Math.Sin(t * 0.8));
+				if (t % 6 < 4) {
+					inp.Buttons |= Btn.RPadT;
+					double r = t % 6 < 2 ? 30 : 900;
+					inp.MX = (int)(r * Math.Cos(t * 3));
+					inp.MY = (int)(r * Math.Sin(t * 3));
+				}
 				app.Post(delegate { app.OnInput(inp); });
 				Thread.Sleep(16);
 			}
@@ -1806,6 +1826,81 @@ namespace LizardKing
 
 		public static readonly PointF PadL = P(449, 628), PadR = P(1015, 628);
 
+		// A pad as the mouse, in the pad's own frame: a surface that moves
+		// with what the PC gets, so the trackball's roll and glide and the
+		// gyro show on the right pad as the one motion they are, and the
+		// wheel on the left (see MouseMotion). Dots for the pointer, ribs
+		// for the wheel; lit while the thumb is on the pad, since the
+		// output's own bursts flicker too fast to light by.
+		static void MouseSurface(Graphics g, bool right, InputState inp,
+					 Color ink, Color hidden, Color hiLine,
+					 Font padFont)
+		{
+			var m = right ? inp.Ball : inp.Wheel;
+			var c = inp.Has(right ? Btn.RPadT : Btn.LPadT) ? hiLine : hidden;
+			var st = g.Save();
+			using (var pad = RoundRect(0, 0, 312, 312, 34))
+			using (var inner = RoundRect(0, 0, 192, 192, 20))
+			using (var edge = new Pen(hidden, 2.5f)) {
+				g.SetClip(pad, CombineMode.Intersect);
+				var all = g.Save();
+				g.SetClip(inner, CombineMode.Exclude);
+				Marks(g, right, m, 1 / MouseMotion.Zoom, c);
+				g.Restore(all);
+				g.SetClip(inner, CombineMode.Intersect);
+				Marks(g, right, m, 1, c);
+				g.Restore(all);
+				g.DrawPath(edge, inner);
+			}
+			g.Restore(st);
+			// what the pad does, and the mouse button its click is,
+			// haloed so it reads over the moving marks
+			var sf = new StringFormat {
+				Alignment = StringAlignment.Center,
+				LineAlignment = StringAlignment.Center,
+			};
+			using (var word = new GraphicsPath())
+			using (var halo = new Pen(Theme.Panel, 14))
+			using (var b = new SolidBrush(ink)) {
+				word.AddString(right ? "pointer\nM1" : "scroll\nM3",
+					       padFont.FontFamily, (int)padFont.Style,
+					       padFont.Size,
+					       new RectangleF(-156, -80, 312, 160), sf);
+				halo.LineJoin = LineJoin.Round;
+				g.DrawPath(halo, word);
+				g.FillPath(b, word);
+			}
+		}
+
+		// One zone's marks at scale k, each blurred by its step since the
+		// last frame: dots for the pointer, ribs for the wheel.
+		static void Marks(Graphics g, bool right, MouseMotion.Surface m,
+				  float k, Color c)
+		{
+			const float cell = MouseMotion.Cell;
+			float ox = m.X * k % cell, oy = m.Y * k % cell;
+			// where each mark was a frame ago, relative to it
+			float bx = -m.DX * k, by = m.DY * k;
+			bool still = Math.Abs(bx) + Math.Abs(by) < 0.5f;
+			using (var b = new SolidBrush(c))
+			using (var pen = new Pen(c, 8)) {
+				pen.StartCap = pen.EndCap = LineCap.Round;
+				for (float y = -4 * cell - oy; y < 4 * cell; y += cell) {
+					if (!right) {
+						g.FillRectangle(b, -156, Math.Min(y, y + by) - 2,
+								312, Math.Abs(by) + 4);
+						continue;
+					}
+					for (float x = -4 * cell + ox; x < 4 * cell; x += cell) {
+						if (still)
+							g.FillEllipse(b, x - 4, y - 4, 8, 8);
+						else
+							g.DrawLine(pen, x + bx, y + by, x, y);
+					}
+				}
+			}
+		}
+
 		// layer: 0 controller, 1 keyboard (decides what the pads
 		// show); colours are already faded for inactive panels. Pressed
 		// controls fill with hiFill and outline with hiPen; sticks move,
@@ -1945,21 +2040,21 @@ namespace LizardKing
 							g.DrawLine(thin, -156, o, 156, o);
 						}
 					}
-					if (layer == 0) {
-						var sf = new StringFormat {
-							Alignment = StringAlignment.Center,
-							LineAlignment = StringAlignment.Center,
-						};
-						// the word, and the mouse button its click is
-						g.DrawString(i == 0 ? "scroll\nM3" : "pointer\nM1",
-							     padFont, inkB,
-							     new RectangleF(-156, -80, 312, 160), sf);
-					}
+					if (layer == 0)
+						MouseSurface(g, i == 1, inp, ink, hidden, hiLine,
+							     padFont);
 					if (touch) {
 						float px = (i == 0 ? inp.LPX : inp.RPX) * 140f / 32;
 						float py = -(i == 0 ? inp.LPY : inp.RPY) * 140f / 32;
-						g.FillEllipse(hiB, px - 24, py - 24, 48, 48);
-						g.DrawEllipse(hiPen, px - 24, py - 24, 48, 48);
+						// in the keyboard the thumb picks the key; as
+						// the mouse it only drives the surface, a
+						// faint ring
+						if (layer == 1) {
+							g.FillEllipse(hiB, px - 24, py - 24, 48, 48);
+							g.DrawEllipse(hiPen, px - 24, py - 24, 48, 48);
+						} else {
+							g.DrawEllipse(thin, px - 24, py - 24, 48, 48);
+						}
 					}
 					g.Restore(st);
 				}
@@ -1979,6 +2074,68 @@ namespace LizardKing
 						      bb.P.Y - 60, 120, 120);
 				}
 			}
+		}
+	}
+
+	// The pads' surfaces as the Guide draws them, moved exactly as far as
+	// the mouse output (the puck's travel, by difference, so a dropped line
+	// costs nothing). Each pad has an inner zone at 1:1 and a band around
+	// it ZOOM times zoomed out, which still reads when the inner one moves
+	// too fast to; each mark is blurred by its step since the last frame,
+	// as a camera's shutter would, so fast motion streaks instead of
+	// strobing (a cell's step in one frame reads as no step).
+	class MouseMotion
+	{
+		// world units: a mark every Cell, a pointer count PerCount (the
+		// thumb's travel on the drawn pad, at slow speed), a notch a Cell
+		public const float Cell = 48, Zoom = 4, PerCount = 0.75f;
+
+		public struct Surface
+		{
+			// offset, wrapping at a band cell, and the last step (y up)
+			public float X, Y, DX, DY;
+		}
+
+		Surface ball, wheel;
+		int lastX, lastY, lastW;
+		bool started;
+
+		public void Step(ref InputState inp)
+		{
+			if (started) {
+				Move(ref ball, (short)(inp.MX - lastX) * PerCount,
+				     (short)(inp.MY - lastY) * PerCount);
+				Move(ref wheel, 0, (short)(inp.MW - lastW) * Cell / 16);
+			}
+			started = true;
+			lastX = inp.MX;
+			lastY = inp.MY;
+			lastW = inp.MW;
+			inp.Ball = ball;
+			inp.Wheel = wheel;
+		}
+
+		// no travel since the last frame: the puck sends nothing once the
+		// mouse stops, so the blur of its last step is cleared here
+		public void Settle(ref InputState inp)
+		{
+			ball.DX = ball.DY = wheel.DX = wheel.DY = 0;
+			inp.Ball = ball;
+			inp.Wheel = wheel;
+		}
+
+		static void Move(ref Surface s, float dx, float dy)
+		{
+			s.DX = dx;
+			s.DY = dy;
+			s.X = Wrap(s.X + dx);
+			s.Y = Wrap(s.Y + dy);
+		}
+
+		static float Wrap(float f)
+		{
+			f %= Cell * Zoom;
+			return f < 0 ? f + Cell * Zoom : f;
 		}
 	}
 
@@ -2687,11 +2844,27 @@ namespace LizardKing
 			// practice mode: while the Guide is up the controller's input
 			// goes to it, not to the apps behind it
 			beats.Interval = 250;
-			beats.Tick += delegate {
-				if (this.guideUp && Link != null)
-					Link.Beat();
-			};
+			beats.Tick += delegate { Beat(); };
 			beats.Start();
+			// a few frames with no new input
+			settle.Interval = 50;
+			settle.Tick += delegate { Settle(); };
+		}
+
+		// The timer alone can't keep the controller: Windows fires it only
+		// when nothing else is queued, and a stream of input with its
+		// redraws (a long trackball spin) keeps the queue full past the
+		// puck's 1 s, which hands the mouse back. Handling input proves the
+		// window thread alive just as well.
+		int beatAt;
+
+		void Beat()
+		{
+			if (!guideUp || Link == null ||
+			    Environment.TickCount - beatAt < 250)
+				return;
+			beatAt = Environment.TickCount;
+			Link.Beat();
 		}
 
 		public bool Installed
@@ -2795,9 +2968,26 @@ namespace LizardKing
 			guide.OnState(st);
 		}
 
+		readonly MouseMotion motion = new MouseMotion();
+		readonly System.Windows.Forms.Timer settle =
+			new System.Windows.Forms.Timer();
+		InputState input;
+
 		public void OnInput(InputState inp)
 		{
+			Beat();
+			motion.Step(ref inp);
+			input = inp;
 			guide.OnInput(inp);
+			settle.Stop();
+			settle.Start();
+		}
+
+		void Settle()
+		{
+			settle.Stop();
+			motion.Settle(ref input);
+			guide.OnInput(input);
 		}
 
 		// The controller turned on while on its cable (charging, say) skips

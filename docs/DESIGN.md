@@ -251,7 +251,18 @@ switches, both on the Guide button:
   labelled for that layer; the layer the thumbs select is outlined and the
   others fade. The outlined panel responds live: pressed buttons fill and
   their labels light up, stick caps move in their rings, and a dot follows
-  each thumb on its pad; a pad lights only while it is clicked. A held button stays lit in the panel of the layer
+  each thumb on its pad; a pad lights only while it is clicked. The Guide
+  shows what the PC gets, not the raw input: in the gamepad panel each pad
+  is a surface that moves exactly as far as the mouse it makes (dots
+  rolling with the pointer on the right, ribs turning with the wheel on the
+  left), and the thumb is only a faint ring. So the trackball's glide, its
+  pressure and lift dead zones, and the gyro all show as the one motion
+  they are. Fast motion would strobe (a cell's step in one frame reads as
+  no step), so each mark is blurred by its step since the last frame, as a
+  camera's shutter would, and an inner zone at 1:1 is ringed by a band
+  zoomed out 4x, which still reads when the inner one is a blur. A surface
+  is lit while its thumb is on the pad, not while it moves: the output
+  comes in bursts too quick to light by. A held button stays lit in the panel of the layer
   it was pressed in, as it keeps acting there, even after the thumbs move
   on. Triggers fill as they are pulled in the controller panel; in the
   desktop panels they are keys (Space, Backspace) and fill on or off at the
@@ -312,9 +323,10 @@ How it works:
   Guide + Start; `KT connected battery charge signal keymap low dev
   serial` about
   once a second and at once when a switch changes; `KB
-  buttons lt rt lx ly rx ry lpx lpy rpx rpy own0 own1 own2` for the live
-  drawing (buttons in hex, triggers 0..31, sticks and pads -32..32, the
-  held buttons each layer owns in hex, sent on a change at most every
+  buttons lt rt lx ly rx ry lpx lpy rpx rpy own0 own1 mx my mw` for the
+  live drawing (buttons in hex, triggers 0..31, sticks and pads -32..32,
+  the held buttons each layer owns in hex, the mouse output's travel
+  wrapping at 16 bits, sent on a change at most every
   8 ms). The button labels themselves are
   written into the Guide, which repaints at most about 60 times a
   second.

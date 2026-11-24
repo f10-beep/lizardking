@@ -1207,19 +1207,23 @@ static void streamState(const uint8_t zone[2])
 }
 
 // Live input for the Guide's controller drawing: "KB buttons lt rt lx ly rx
-// ry lpx lpy rpx rpy own0 own1 own2" (buttons in hex as the Guide sees them,
-// with derived pad clicks and trigger bits; triggers 0..31; sticks and pad
-// positions -32..32, pads 0 when untouched; ownN in hex, the held buttons
-// that belong to layer N, so a button held across a layer change stays lit
-// in the panel it acts in). Coarse steps keep stick and pad jitter from
-// flooding the port; sent only on a change, at most every 8 ms, and dropped
-// rather than waited for when the CDC buffer is full.
+// ry lpx lpy rpx rpy own0 own1 mx my mw" (buttons in hex as the Guide sees
+// them, with derived pad clicks and trigger bits; triggers 0..31; sticks and
+// pad positions -32..32, pads 0 when untouched; ownN in hex, the held
+// buttons that belong to layer N, so a button held across a layer change
+// stays lit in the panel it acts in; m the mouse output's travel, see
+// travelStep). Coarse steps keep stick and pad jitter from flooding the
+// port; sent only on a change, at most every 8 ms, and dropped rather than
+// waited for when the CDC buffer is full.
+static int32_t s_travelX, s_travelY;
+static float s_travelW;
+
 static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 {
-	static int16_t last[10];
+	static int16_t last[13];
 	static uint32_t lastB = 0xFFFFFFFF, lastOwn[LY_N], lastMs;
 	bool lTouch = b & TB_LPADT, rTouch = b & TB_RPADT;
-	const int16_t cur[10] = {
+	const int16_t cur[13] = {
 		(int16_t)(in.lt >> 3),
 		(int16_t)(in.rt >> 3),
 		(int16_t)(in.lx / 1024),
@@ -1230,6 +1234,9 @@ static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 		(int16_t)(lTouch ? in.lpy / 1024 : 0),
 		(int16_t)(rTouch ? in.rpx / 1024 : 0),
 		(int16_t)(rTouch ? in.rpy / 1024 : 0),
+		(int16_t)s_travelX,
+		(int16_t)s_travelY,
+		(int16_t)(int32_t)s_travelW,
 	};
 	if (b == lastB && !memcmp(cur, last, sizeof cur) &&
 	    !memcmp(s_own, lastOwn, sizeof lastOwn))
@@ -1240,11 +1247,11 @@ static void streamInput(const PuckInput &in, uint32_t b, uint32_t now)
 	lastMs = now;
 	memcpy(last, cur, sizeof cur);
 	memcpy(lastOwn, s_own, sizeof lastOwn);
-	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d %lx %lx\n",
+	Serial.printf("KB %lx %d %d %d %d %d %d %d %d %d %d %lx %lx %d %d %d\n",
 		      (unsigned long)b, cur[0], cur[1], cur[2], cur[3], cur[4],
 		      cur[5], cur[6], cur[7], cur[8], cur[9],
 		      (unsigned long)s_own[LY_CTRL],
-		      (unsigned long)s_own[LY_KBD]);
+		      (unsigned long)s_own[LY_KBD], cur[10], cur[11], cur[12]);
 }
 
 void lkDumpKeymap()
@@ -1578,6 +1585,18 @@ static void gyroStep(const PuckInput &in, bool aiming, float r, float *dx,
 	s_gyro.gapY -= *dy;
 }
 
+// The Guide draws the mouse the pads make as a surface under each pad that
+// moves with the output: the pointer's travel in counts (y up), the wheel's
+// in sixteenths of a notch, both wrapping at 16 bits. The Guide takes the
+// difference from the last line, so a line it never gets costs nothing.
+static void travelStep(int dx, int dy, int wheel)
+{
+	s_travelX += dx;
+	s_travelY -= dy;
+	s_travelW += wheel * 16 / (s_wheelHiRes ? (float)LK_WHEEL_HIRES : 1.0f);
+	s_travelW = fmodf(s_travelW, 65536.0f);
+}
+
 // Outside the keyboard the pads are the mouse: right pad = trackball pointer,
 // left pad = circular wheel.
 static void mouseStep(const PuckInput &in, uint8_t touchLayer, int rdx, int rdy,
@@ -1607,6 +1626,7 @@ static void mouseStep(const PuckInput &in, uint8_t touchLayer, int rdx, int rdy,
 	s_carryY = fy - dy;
 
 	wheel = wheelStep(mouse && lTouch, lTouch, in.lpx, in.lpy, in.lpz, now);
+	travelStep(dx, dy, wheel);
 
 	uint8_t mbtn = 0;
 	if (s_own[LY_CTRL] & TB_RPADC)
