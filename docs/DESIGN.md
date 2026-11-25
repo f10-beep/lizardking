@@ -48,6 +48,11 @@ One composite device, pid.codes test ID `1209:0001`:
   into the PC and pair in Steam, as with Valve's puck. Pair every
   controller in the same session; replug the puck and, with a bond, it
   boots into LizardKing.
+- **The LED shows the link.** The puck's user LED glows faintly while it
+  has the controller (with a puck in each room, the one in use) and
+  flashes bright when it wakes the PC. A bright blinking blue LED on
+  SuperMini boards is the charger's, with no battery attached; firmware
+  can't reach it.
 - **Lost the controller? Reinstall.** Recovery is the install path; there
   is no other mode switch.
 - Steam Input must be off for games that should see the Xbox pad directly
