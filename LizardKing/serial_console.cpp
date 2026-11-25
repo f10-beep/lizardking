@@ -125,6 +125,7 @@ static void tildeCommand(const char *a)
 //   TR        a test buzz at the current style and strength
 //   SO        power the controllers off on host sleep, persisted
 //   UP        reprint the boot line, with why the puck last reset
+//   BD        each bond as a line for seed_bond.h (dev: copying a bond)
 void serialConsolePoll()
 {
 	// long enough for a key map page (~K)
@@ -185,6 +186,18 @@ void serialConsolePoll()
 				g_suspendOff ? "ON" : "off");
 		} else if (!strcmp(line, "UP")) {
 			printBoot();
+		} else if (!strcmp(line, "BD")) {
+			for (int s = 0; s < NSLOT; s++) {
+				if (!g_slot[s].used)
+					continue;
+				Serial.printf("# bond %d: static const uint8_t "
+					      "k_seedBond[24] = {",
+					      s);
+				for (int i = 0; i < 24; i++)
+					Serial.printf(" 0x%02X,",
+						      g_slot[s].rec[i]);
+				Serial.println(" };");
+			}
 		}
 	}
 }

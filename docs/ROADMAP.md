@@ -47,6 +47,11 @@ Launch feature (in the first release): gyro aiming.
   test over, and measure the game with the Guide open over it, which
   uploads its whole picture about 60 times a second while the controller
   moves.
+- **One controller, a puck in each room.** Works today, dev only: a puck
+  holding a copy of the controller's bond takes it with no re-pairing,
+  and the controller keeps one bond, so it must be copied, never
+  re-paired. Which puck wins, the ways to choose and copy, and what to
+  try next: docs/MULTI_PUCK.md.
 - **Keeping a tuned key map or constant through a reboot.** The console
   already changes both live (`~K`, `~T`); saving them to the puck's flash
   would let an owner keep a customization. Likely a popular request once

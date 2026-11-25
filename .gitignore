@@ -3,3 +3,4 @@ build/
 LizardKing/git_version.h
 LizardKing/guide_exe.h
 .claude/settings.local.json
+LizardKing/seed_bond.h

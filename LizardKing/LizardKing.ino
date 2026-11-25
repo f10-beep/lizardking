@@ -111,6 +111,17 @@ void setup()
 	loadCfg();
 	rfApplyStartupLastGoodChannel();
 	loadBonds();
+	// Dev only: a puck installed with a copy of another's bond (from BD)
+	// takes the same controller, which keeps just one bond; re-pairing in
+	// Steam would cut the other puck off. Gitignored, never shipped.
+#if __has_include("seed_bond.h")
+#include "seed_bond.h"
+	if (!bondedSlotCount()) {
+		memcpy(g_slot[0].rec, k_seedBond, 24);
+		g_slot[0].used = true;
+		saveBonds();
+	}
+#endif
 	// Steam mode's keyboard/mouse fallback while Steam is closed
 	defaultLizardMap();
 	// session addresses derive from each bond's UUID, stable across reboots
