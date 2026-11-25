@@ -657,16 +657,19 @@ namespace LizardKing
 		}
 
 		// pid.codes test ID 1209:0001; the CDC function's port name is in
-		// its "Device Parameters" key. Only ports present right now count.
-		static string FindPort()
+		// its "Device Parameters" key. Windows can go on listing a port
+		// after its puck is unplugged, so every candidate is tried, not
+		// just the first.
+		static List<string> FindPorts()
 		{
+			var found = new List<string>();
 			var present = new HashSet<string>(
 				SerialPort.GetPortNames(),
 				StringComparer.OrdinalIgnoreCase);
 			using (var usb = Registry.LocalMachine.OpenSubKey(
 				       @"SYSTEM\CurrentControlSet\Enum\USB")) {
 				if (usb == null)
-					return null;
+					return found;
 				foreach (string dev in usb.GetSubKeyNames()) {
 					if (!dev.StartsWith(
 						    "VID_1209&PID_0001",
@@ -683,24 +686,24 @@ namespace LizardKing
 									"PortName") as string;
 								if (name != null &&
 								    present.Contains(name))
-									return name;
+									found.Add(name);
 							}
 						}
 					}
 				}
 			}
-			return null;
+			return found;
 		}
 
 		void Run()
 		{
 			while (true) {
-				try {
-					string port = FindPort();
-					if (port != null)
+				foreach (string port in FindPorts()) {
+					try {
 						Session(port);
-				} catch (Exception) {
-					// unplugged, or held by another program
+					} catch (Exception) {
+						// unplugged, or held by another program
+					}
 				}
 				app.Post(delegate { app.OnDisconnected(); });
 				Thread.Sleep(1000);
@@ -2949,8 +2952,13 @@ namespace LizardKing
 				StatusChanged("Connected (" + port + ")");
 		}
 
+		// With no puck the Guide button can't close the Guide, and the
+		// controller's own clicks don't count as another mouse: a Guide up
+		// now would cover the screen for good.
 		public void OnDisconnected()
 		{
+			if (guideUp)
+				ToggleGuide();
 			OnState(new PuckState(0, KeyOverlay.Center, KeyOverlay.Center,
 					      false));
 			if (StatusChanged != null)
