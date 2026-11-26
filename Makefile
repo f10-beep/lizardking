@@ -64,7 +64,7 @@ UF2_RELEASE = $(OUTPUT_DIR)/$(SKETCH).uf2
 UF2_DEV = $(OUTPUT_DIR)/$(SKETCH)-dev.uf2
 
 .PHONY: need-clang-format format format-check check build guide-header \
-	flash deploy keymap tune bench mousecount
+	flash deploy keymap tune bench mousecount keymap-chart
 
 need-clang-format:
 	@[ -n "$(CLANG_FORMAT)" ] || { echo "clang-format 18 not found"; exit 1; }
@@ -103,6 +103,19 @@ bench:
 		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
 		'guide\LizardKingGuide.cs' 'guide\Gpu.cs' 'tools\bench\Bench.cs'
 	build/bench/Bench.exe 20
+
+# The README's key map chart (docs/keymap.png), drawn by the Guide's own
+# small key map from KEYMAP in the source. Redraw it when the key map changes.
+keymap-chart:
+	mkdir -p build/keymap-chart
+	"$(CSC)" -nologo -target:exe -optimize+ -main:LizardKing.KeymapChart \
+		'-out:build\keymap-chart\KeymapChart.exe' \
+		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
+		'guide\LizardKingGuide.cs' 'guide\Gpu.cs' \
+		'tools\keymap-chart\KeymapChart.cs'
+	powershell -NoProfile -ExecutionPolicy Bypass -Command \
+		". tools/keymap-lines.ps1; Get-KeymapLines '$(HID_H)'" | \
+		build/keymap-chart/KeymapChart.exe docs/keymap.png
 
 # Raw mouse counts per swipe, per device (and what SendInput injects, as
 # Steam Input does), to compare pointer speeds in the same units.

@@ -120,6 +120,7 @@ make flash KEEP_BONDS=1   # the dev UF2: keeps the pairing
 make check    # format-check + trailing-comment lint
 make format   # apply kernel style
 make keymap   # push the source's key map to the running puck, no reflash
+make keymap-chart   # redraw the README's key map chart (Windows)
 make tune SET="LK_GYRO_SENS_SLOW 10"   # set a feel constant live (no SET:
               # list them); both last until the puck reboots
 make bench    # how fast the key map reaches the screen, no one typing

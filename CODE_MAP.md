@@ -54,3 +54,5 @@ usb_app_drivers      custom class drivers and the vendor / string descriptor
 | `guide/` | the LizardKing Guide (C#, Windows) |
 | `tools/flash.ps1` | `make flash`: reboots the puck into its UF2 bootloader and copies the UF2 |
 | `tools/layout/` | the keyboard layout search |
+| `tools/keymap-chart/` | `make keymap-chart`: the README's key map picture, drawn by the Guide's own key map |
+| `tools/keymap-lines.ps1` | `KEYMAP` from the source as the puck's `~K` lines, for `make keymap` and the chart |
