@@ -32,8 +32,9 @@ static int LK_CLICK_OFF = 2300;
 static int LK_KEY_CLICK_ON = 2400;
 static int LK_KEY_CLICK_OFF = 1700;
 
-// pad counts per cursor pixel
-static int LK_PX_DIV = 160;
+// pad counts per cursor pixel: a swipe across the pad is 630 counts, as with
+// Steam Input's desktop default
+static int LK_PX_DIV = 104;
 
 // While touching, the cursor chases the thumb's absolute (1:1) position,
 // closing a fraction of the gap each report: all of it at thumb speeds up

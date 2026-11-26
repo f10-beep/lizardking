@@ -421,6 +421,12 @@ The letter layout proposal is in `docs/KEYBOARD_LAYOUT.md`.
 
 ## Cursor: a virtual trackball
 
+- **Speed:** a swipe across the whole pad moves the pointer 630 counts,
+  the speed of Steam Input's desktop default (measured with
+  `tools/mousecount`), and a released flick glides about as far as Steam's.
+  Steam has no acceleration, so neither do we: the pointer's travel is the
+  thumb's, at any speed. The controller's own mouse, with Steam closed, is
+  slower (510).
 - **While touching,** the cursor chases the thumb's absolute (1:1)
   position, closing a fraction of the gap each report:
   - all of it (exactly 1:1) at thumb speeds below about 250 px/s;
@@ -444,9 +450,8 @@ The letter layout proposal is in `docs/KEYBOARD_LAYOUT.md`.
   again. While it is open the launch velocity updates more slowly (half as
   fast at 2 px), so a settled lift launches nothing.
 - **Flick tuning, reverted to this baseline on 2026-11-20 to re-test one at
-  a time:** paying out the lagged gap after lift (felt good), a 25% faster
-  base speed (cost precision), launching from the thumb's velocity, a
-  velocity dead zone instead of the launch freeze, pressure-weighted
+  a time:** paying out the lagged gap after lift (felt good), launching
+  from the thumb's velocity, a velocity dead zone instead of the launch freeze, pressure-weighted
   launch, and launching at the 40 ms peak (strong flicks, but broke
   lift-off protection). Earlier dead ends: rewinding the last reports
   (hard step, could miss), smoothing on falling pressure (loosened 1:1),

@@ -64,7 +64,7 @@ UF2_RELEASE = $(OUTPUT_DIR)/$(SKETCH).uf2
 UF2_DEV = $(OUTPUT_DIR)/$(SKETCH)-dev.uf2
 
 .PHONY: need-clang-format format format-check check build guide-header \
-	flash deploy keymap tune bench
+	flash deploy keymap tune bench mousecount
 
 need-clang-format:
 	@[ -n "$(CLANG_FORMAT)" ] || { echo "clang-format 18 not found"; exit 1; }
@@ -103,6 +103,16 @@ bench:
 		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
 		'guide\LizardKingGuide.cs' 'guide\Gpu.cs' 'tools\bench\Bench.cs'
 	build/bench/Bench.exe 20
+
+# Raw mouse counts per swipe, per device (and what SendInput injects, as
+# Steam Input does), to compare pointer speeds in the same units.
+mousecount:
+	mkdir -p build/mousecount
+	"$(CSC)" -nologo -target:exe -optimize+ \
+		'-out:build\mousecount\MouseCount.exe' \
+		-r:System.Windows.Forms.dll -r:System.Drawing.dll \
+		'tools\mousecount\MouseCount.cs'
+	build/mousecount/MouseCount.exe 120
 
 build: guide-header
 	./gen_version.sh
