@@ -383,7 +383,7 @@ How it works:
   tells a newcomer where to look). Like the toast, it is click-through. A
   Windows notification can't carry a picture without registering the app
   with the Start menu, and doubled the app's name in its header. Its menu holds only what has no chord:
-  Uninstall (when installed) and Quit.
+  Uninstall (while the per-user copy exists) and Quit.
 - One instance at a time: a newly started copy (an update, a dev build)
   asks the running one to quit and takes over the serial port. `--demo`
   cycles fake states without a puck and runs alongside a real copy.
@@ -400,13 +400,15 @@ around any of Windows' safeguards:
   `README.txt`. The same press hides it again; the Guide connecting or the
   puck being unplugged hides it too. No PC is ever shown the drive
   uninvited.
-- Nothing runs by itself and nothing is installed unless asked. Started
-  from the drive, the Guide copies itself to a temporary folder and runs
-  from there, with the Guide up. Guide + Start asks to install for this
-  Windows user: a copy in `%LOCALAPPDATA%\Programs\LizardKing` and an
-  ordinary startup entry in `HKCU\...\Run`, visible in Settings > Apps >
-  Startup. Nothing needs admin rights. Uninstall from the tray icon
-  removes both.
+- Nothing runs by itself and nothing starts at sign-in unless asked.
+  Started from the drive, the Guide copies itself to
+  `%LOCALAPPDATA%\Programs\LizardKing` (replacing an older copy, which it
+  asks to quit first) and runs from there, with the Guide up. Guide +
+  Start asks to install for this Windows user, which only adds an ordinary
+  startup entry in `HKCU\...\Run`, visible in Settings > Apps > Startup.
+  One path on purpose: Windows keeps an entry in Settings' list of tray
+  icons for every path an icon ever came from. Nothing needs admin rights.
+  Uninstall from the tray icon removes the folder and the entry.
 - The volume is synthesized on the fly (`LizardKing/guide_drive.cpp`): a FAT12
   boot sector, FAT and root directory computed from the README and the exe
   embedded at build time as `LizardKing/guide_exe.h` (generated with `xxd`,

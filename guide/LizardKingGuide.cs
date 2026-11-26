@@ -26,9 +26,9 @@
 // the puck owns; "KG" turns the Guide on or off; "KI" (Guide + Start) asks
 // to install.
 //
-// Started from the puck's drive it never installs by itself: it copies
-// itself to a temporary folder and runs from there until the user asks to
-// install (Guide + Start).
+// Started from the puck's drive it copies itself to the per-user folder and
+// runs from there; it starts at sign-in only once the user asks to install
+// (Guide + Start).
 //
 // Build: guide/build.cmd (with Gpu.cs). --demo cycles fake states without
 // a puck.
@@ -2737,9 +2737,11 @@ namespace LizardKing
 		}
 	}
 
-	// Per-user install: a copy in %LOCALAPPDATA%\Programs\LizardKing and an
-	// ordinary HKCU Run entry, both visible in Settings > Apps > Startup and
-	// removed by Uninstall. Nothing needs admin rights.
+	// Per-user: every copy started from the drive runs from
+	// %LOCALAPPDATA%\Programs\LizardKing, and installing adds only an
+	// ordinary HKCU Run entry, visible in Settings > Apps > Startup. One path
+	// keeps one entry in Windows' list of tray icons, which never forgets a
+	// path. Uninstall removes both. Nothing needs admin rights.
 	static class Install
 	{
 		const string RunKey = @"Software\Microsoft\Windows\CurrentVersion\Run";
@@ -2765,12 +2767,20 @@ namespace LizardKing
 			get { return Path.Combine(Dir, "LizardKing Guide.exe"); }
 		}
 
-		public static bool IsInstalledCopy
+		public static bool IsUserCopy
 		{
 			get {
 				return string.Equals(Path.GetFullPath(Application.ExecutablePath),
 						     Path.GetFullPath(Exe),
 						     StringComparison.OrdinalIgnoreCase);
+			}
+		}
+
+		public static bool StartsAtSignIn
+		{
+			get {
+				using (var k = Registry.CurrentUser.OpenSubKey(RunKey))
+					return k != null && k.GetValue(RunName) != null;
 			}
 		}
 
@@ -2868,11 +2878,6 @@ namespace LizardKing
 				return;
 			beatAt = Environment.TickCount;
 			Link.Beat();
-		}
-
-		public bool Installed
-		{
-			get { return installed; }
 		}
 
 		public void ShowWindows()
@@ -3058,25 +3063,7 @@ namespace LizardKing
 			}
 			Application.EnableVisualStyles();
 			bool demo = Array.IndexOf(args, "--demo") >= 0;
-			bool fresh = Array.IndexOf(args, "--installed") >= 0;
-
-			// Started from the puck's drive: run from a temporary copy,
-			// since the drive can be hidden while the Guide is open.
-			// Nothing is installed until the user asks.
-			if (!demo && FromRemovableDrive()) {
-				try {
-					string tmp = Path.Combine(Path.GetTempPath(),
-								  "LizardKing",
-								  "LizardKing Guide.exe");
-					Install.CopyTo(tmp);
-					Process.Start(tmp);
-				} catch (Exception ex) {
-					MessageBox.Show("Could not start the Guide:\n" +
-							ex.Message, "LizardKing Guide");
-					return 1;
-				}
-				return 0;
-			}
+			bool open = Array.IndexOf(args, "--open") >= 0;
 
 			// A newer launch (an update, a dev build) takes over from a
 			// running copy instead of competing for the serial port.
@@ -3095,10 +3082,30 @@ namespace LizardKing
 				} catch (AbandonedMutexException) {
 				}
 			}
-			bool installed = Install.IsInstalledCopy;
+
+			// Started from the puck's drive: run from the per-user copy,
+			// since the drive can be hidden while the Guide is open. The
+			// running copy has quit by now, so its exe can be replaced.
+			// The mutex goes before the copy starts: finding it held, the
+			// copy would ask to quit, and with no one listening the
+			// request would end the copy itself.
+			if (!demo && FromRemovableDrive()) {
+				try {
+					Install.CopyTo(Install.Exe);
+					mutex.ReleaseMutex();
+					Process.Start(Install.Exe, "--open");
+				} catch (Exception ex) {
+					MessageBox.Show("Could not start the Guide:\n" +
+							ex.Message, "LizardKing Guide");
+					return 1;
+				}
+				return 0;
+			}
+
+			bool installed = Install.StartsAtSignIn;
 			// opened by hand (from the drive, or just installed) it starts
 			// with the Guide up; started at sign-in, closed
-			Run(demo, quit, installed, !installed || fresh);
+			Run(demo, quit, installed, !installed || open);
 			mutex.ReleaseMutex();
 			return 0;
 		}
@@ -3117,9 +3124,8 @@ namespace LizardKing
 		{
 			var r = MessageBox.Show(
 				"Install the LizardKing Guide for this Windows user?\n\n" +
-				"It is copied to your user folder and starts when you " +
-				"sign in. Hold the Guide button to open the Guide. " +
-				"Remove it any time from its tray icon (Uninstall) or " +
+				"It starts when you sign in. Hold the Guide button " +
+				"to open the Guide. Remove it any time from its tray icon (Uninstall) or " +
 				"turn it off in Settings > Apps > Startup.",
 				"LizardKing Guide", MessageBoxButtons.OKCancel,
 				MessageBoxIcon.Question, MessageBoxDefaultButton.Button1,
@@ -3127,10 +3133,14 @@ namespace LizardKing
 			if (r != DialogResult.OK)
 				return;
 			try {
-				Install.CopyTo(Install.Exe);
+				// a dev build installs itself; the per-user copy is
+				// already in place
+				if (!Install.IsUserCopy)
+					Install.CopyTo(Install.Exe);
 				Install.StartAtSignIn(true);
-				// the installed copy takes over from this one
-				Process.Start(Install.Exe, "--installed");
+				// a fresh start, which takes over from this one, sees
+				// that it is installed
+				Process.Start(Install.Exe, "--open");
 			} catch (Exception ex) {
 				MessageBox.Show("Could not install the Guide:\n" +
 						ex.Message, "LizardKing Guide",
@@ -3210,7 +3220,9 @@ namespace LizardKing
 				Install.Uninstall();
 				Application.Exit();
 			};
-			uninstall.Visible = app.Installed;
+			// a copy from the drive is in the user folder before it is
+			// installed, so there is something to remove then too
+			uninstall.Visible = File.Exists(Install.Exe);
 			var quit = new ToolStripMenuItem("Quit");
 			quit.Click += delegate { Application.Exit(); };
 			m.Items.AddRange(new ToolStripItem[] {

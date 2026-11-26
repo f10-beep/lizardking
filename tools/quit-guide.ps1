@@ -8,7 +8,7 @@ try {
 	# none running
 	exit 0
 }
-# installed and drive copies are "LizardKing Guide.exe", the build's
+# the per-user copy is "LizardKing Guide.exe", the build's
 # "LizardKingGuide.exe"
 $deadline = (Get-Date).AddSeconds(5)
 while (Get-Process -Name 'LizardKing Guide', 'LizardKingGuide' -ErrorAction SilentlyContinue) {
