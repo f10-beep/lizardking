@@ -515,7 +515,7 @@ What did not work, so it isn't tried again:
 - **Click:** a sharp 0x81 HAPTIC_PULSE, 1,500 µs on press and 700 µs on
   release. Pulse side 0 = right pad.
 - **Movement:** a faint 0x83 HAPTIC_LFO_TONE (−24 dB, 200 Hz, 20 units) per
-  24 px of cursor travel, touching or gliding, and per scroll notch. Tone
+  24 px of cursor travel and per 2/3 scroll notch, touching or gliding. Tone
   side 0 = **left** pad, the reverse of 0x81.
 - **Keyboard layer on / off:** a 0x83 tone (200 Hz, 30 units) on both
   pads, −12 dB on and −18 dB off, deliberately dull so it never reads as a

@@ -119,8 +119,8 @@ static float LK_SCROLL_R_HOLD = 0.1f;
 static float LK_SCROLL_FLING = 0.12f;
 static float LK_SCROLL_DECAY = 0.996f;
 static float LK_SCROLL_STOP = 0.008f;
-// a scroll texture tick every SCROLL_TICK notches, fine to match the
-// high-resolution wheel
+// a scroll texture tick every SCROLL_TICK notches, turning or coasting, fine
+// to match the high-resolution wheel
 static float LK_SCROLL_TICK = (2.0f / 3.0f);
 // High-resolution wheel: once Windows sets the HID Resolution Multiplier,
 // wheel reports count 1/120 notch.
@@ -152,8 +152,7 @@ static int LK_TICK_DUR = 20;
 static int LK_KBD_ON_DB = -12;
 static int LK_KBD_OFF_DB = -18;
 static int LK_KBD_DUR = 30;
-// a tick per TICK_PX of cursor travel, so ticks slow down with the ball;
-// scrolling ticks once per wheel notch
+// a tick per TICK_PX of cursor travel, so ticks slow down with the ball
 static float LK_TICK_PX = 24.0f;
 #define LK_TICK_MIN_MS 12u
 
@@ -1435,8 +1434,7 @@ static int wheelStep(bool active, bool lTouch, int16_t x, int16_t y, int16_t p,
 		s_scroll.tick = 0;
 	s_scroll.notches += n;
 	s_scroll.tick += fabsf(n);
-	// texture ticks only under the thumb, not while gliding
-	if (active && s_scroll.tick >= LK_SCROLL_TICK) {
+	if (s_scroll.tick >= LK_SCROLL_TICK) {
 		s_scroll.tick -= LK_SCROLL_TICK;
 		hapticTick(TONE_SIDE[PAD_L]);
 	}
