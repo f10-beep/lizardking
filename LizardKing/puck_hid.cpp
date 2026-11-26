@@ -14,7 +14,6 @@
 #include <Arduino.h>
 #include <string.h>
 
-uint8_t g_fwdNewOnly = 1;
 SteamPuckController g_steamPuck;
 
 // millis() a power-off (0x9F) was last relayed to each slot; 0 = never. See puckNotePowerOff() / task().
@@ -596,7 +595,7 @@ void SteamPuckController::onReport45(int slot, const uint8_t *rep, bool fresh,
 			blen = maxb;
 		// forward the puck's raw pad coords untouched (Steam does its own interpolation/smoothing). Forward
 		// only FRESH reports: the real puck dedupes, so stale repeats make Steam's velocity/smoothing
-		// stair-step. g_fwdNewOnly toggles for A/B.
+		// stair-step.
 		//
 		// Do NOT gate on hid[slot].ready() here: usbTxHid enqueues into a ring buffer (drop-oldest)
 		// that exists precisely to hold a report while the endpoint is briefly busy -- usbTxDrain
@@ -604,7 +603,7 @@ void SteamPuckController::onReport45(int slot, const uint8_t *rep, bool fresh,
 		// fresh report that landed while the endpoint was busy (~1 ms after each send), which at
 		// 300+ captured reports/s silently discarded ~a third of them (measured: RF new/s ~313 but
 		// host delivered ~180). Always enqueue; the ring paces delivery to the host without loss.
-		bool send = (fresh || !g_fwdNewOnly);
+		bool send = fresh;
 		// Content dedup: the counter byte (rep[1]) free-runs, so drop a report whose body AFTER the
 		// counter is byte-identical to the last one forwarded on this slot -- a true repeat (same
 		// physical input, bumped counter), not a new sample. Caps delivery at the controller's real

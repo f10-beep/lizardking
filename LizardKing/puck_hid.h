@@ -14,9 +14,6 @@
 #include "controllers.h"
 #include <stdint.h>
 
-// Forward report 0x45 only when the seq advanced (dedupe like the real puck); sending stale
-// repeats makes Steam's trackpad smoothing stair-step.
-extern uint8_t g_fwdNewOnly;
 // Note that a controller power-off (0x9F "off!") was just relayed to `slot` (or ALL used slots for the 0xFF
 // broadcast). The puck then presents that slot as cleanly DISCONNECTED to Steam and HOLDS it there through the
 // controller's messy shutdown -- a real controller keeps streaming F1 for up to ~1s after the off command, and
